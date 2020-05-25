@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.ext.commands import Bot, AutoShardedBot, when_mentioned_or, CheckFailure
 from discord.utils import get
 
+import os
 import time, timeago
 from datetime import datetime
 from config import config
@@ -28,11 +29,21 @@ from whois import query as domainwhois
 import ipwhois
 from ipwhois import IPWhois
 
-import pprint
+import shutil
+import subprocess
 
 import dns.name
 
 from typing import List, Dict
+
+# screenshot
+import argparse
+from webscreenshot.webscreenshot import *
+# filter domain only
+if sys.version_info >= (3, 0):
+    from urllib.parse import urlparse
+if sys.version_info < (3, 0) and sys.version_info >= (2, 5):
+    from urlparse import urlparse
 
 redis_pool = None
 redis_conn = None
@@ -66,10 +77,10 @@ bot_help_mx = "Get mx record from a domain name."
 bot_help_a = "Get A (IPv4) record from a domain name."
 bot_help_aaaa = "Get AAAA (IPv6) record from a domain name."
 bot_help_whoisip = "Whois IP."
+bot_help_webshot = "Get screenshot of a domain."
 
 
 bot = AutoShardedBot(command_prefix=['.'], owner_id = config.discord.ownerID, case_insensitive=True)
-#bot.remove_command("help")
 
 
 def init():
@@ -110,6 +121,16 @@ async def on_ready():
     print('------')
     game = discord.Game(name="Checking internet")
     await bot.change_presence(status=discord.Status.online, activity=game)
+
+
+@bot.event
+async def on_message(message):
+    # ignore .help in public
+    if message.content.upper().startswith('.HELP') and isinstance(message.channel, discord.DMChannel) == False:
+        return
+    # Do not remove this, otherwise, command not working.
+    ctx = await bot.get_context(message)
+    await bot.invoke(ctx)
 
 
 @bot.event
@@ -185,6 +206,84 @@ async def invite(ctx):
     invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
     await ctx.send('**[INVITE LINK]**\n\n'
                 f'{invite_link}')
+
+
+@bot.command(pass_context=True, name='webshot', help=bot_help_webshot)
+async def webshot(ctx, website: str):
+    global COMMAND_IN_PROGRESS, redis_expired
+    # refer to limit
+    user_check = await check_limit(ctx, website)
+    if user_check:
+        return
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        return
+
+    domain = ''
+    try:
+        if not website.startswith('http://') or not website.startswith('https://'):
+            website = 'http://' + website
+        domain = urlparse(website).netloc
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
+        return
+
+    if not is_valid_hostname(domain):
+        await ctx.send(f'{ctx.author.mention} invalid given website {website} -> {domain}.')
+        return
+    else:
+        domain = domain.lower()
+        try:
+            await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
+            # if user already doing other command
+            if ctx.message.author.id not in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+            image_shot = await webshot_link(ctx, domain, config.screenshot.default_screensize)
+            # await asyncio.sleep(100)
+            # remove from process
+            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+            if image_shot:
+                # return path as image_shot
+                # create a directory if not exist 
+                subDir = str(time.strftime("%Y-%m"))
+                dirName = config.screenshot.path_storage + subDir
+                filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_" + domain + ".png"
+                if not os.path.exists(dirName):
+                    os.mkdir(dirName)
+                # move file
+                shutil.move(image_shot, dirName + "/" + filename)
+                response_txt = "Web screenshot for domain: **{}**\n".format(domain)
+                image_link = config.screenshot.given_site + subDir + "/" + filename
+                response_txt += image_link
+                msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                # add_screen_db
+                await add_screen_db(domain, image_link)
+                await msg.add_reaction(EMOJI_OK_BOX)
+                # insert insert_query_name
+                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "SCREEN", response_txt, "DISCORD", image_link)
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+
+
+
+async def webshot_link(ctx, website, window_size: str = '1920,1080'):
+    try:
+        random_dir = '/tmp/'+str(uuid.uuid4())+"/"
+        take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website])
+        take_image.wait(timeout=12000)
+        for file in os.listdir(random_dir):
+            if os.path.isfile(os.path.join(random_dir, file)):
+                return random_dir + file
+        return False
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        await ctx.send(f'{ctx.author.mention} Internal error.')
+        return False
+    return False
 
 
 @bot.command(pass_context=True, name='whoisip', help=bot_help_whoisip)
@@ -700,6 +799,21 @@ async def add_domain_ipwhois_db(ip: str, ipwhois_dump: str):
             sql = """ INSERT INTO ipwhois_dump_db (`ip`, `whois_date`, `whois_dump`) 
                       VALUES (%s, %s, %s) """
             cur.execute(sql, (ip, int(time.time()), ipwhois_dump))
+            conn.commit()
+        return True
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
+async def add_screen_db(domain: str, screen_link: str):
+    global conn
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ INSERT INTO screen_db (`domain_name`, `taken_date`, `link`) 
+                      VALUES (%s, %s, %s) """
+            cur.execute(sql, (domain.lower(), int(time.time()), screen_link))
             conn.commit()
         return True
     except Exception as e:
