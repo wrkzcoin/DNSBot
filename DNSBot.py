@@ -53,8 +53,10 @@ EMOJI_HOURGLASS_NOT_DONE = "\u23F3"
 EMOJI_ERROR = "\u274C"
 EMOJI_FLOPPY = "\U0001F4BE"
 EMOJI_OK_BOX = "\U0001F197"
+EMOJI_MAINTENANCE = "\U0001F527"
 
 COMMAND_IN_PROGRESS = []
+IS_RESTARTING = False
 
 pymysqlpool.logger.setLevel('DEBUG')
 myconfig = {
@@ -79,6 +81,8 @@ bot_help_aaaa = "Get AAAA (IPv6) record from a domain name."
 bot_help_whoisip = "Whois IP."
 bot_help_webshot = "Get screenshot of a domain."
 
+bot_help_admin_shutdown = "Restart bot."
+bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
 
 bot = AutoShardedBot(command_prefix=['.'], owner_id = config.discord.ownerID, case_insensitive=True)
 
@@ -185,6 +189,43 @@ async def on_raw_reaction_add(payload):
                 return
 
 
+@bot.group(hidden = True)
+@commands.is_owner()
+async def admin(ctx):
+    if ctx.invoked_subcommand is None:
+        await ctx.send('Invalid `admin` command passed...')
+    return
+
+
+@commands.is_owner()
+@admin.command(aliases=['maintenance'], help=bot_help_admin_maintenance)
+async def maint(ctx):
+    botLogChan = bot.get_channel(id=config.discord.logChan)
+    if is_maintenance():
+        await ctx.send(f'{EMOJI_OK_BOX} bot maintenance **OFF**.')
+        set_maint = set_maintenance(False)
+    else:
+        await ctx.send(f'{EMOJI_OK_BOX} bot maintenance **ON**.')
+        set_maint = set_maintenance(True)
+    return
+
+
+@commands.is_owner()
+@admin.command(pass_context=True, name='shutdown', aliases=['restart'], help=bot_help_admin_shutdown)
+async def shutdown(ctx):
+    global IS_RESTARTING
+    botLogChan = bot.get_channel(id=config.discord.logChan)
+    if IS_RESTARTING:
+        await ctx.send(f'{ctx.author.mention} I already got this command earlier.')
+        return
+    IS_MAINTENANCE = 1
+    IS_RESTARTING = True
+    await ctx.send(f'{ctx.author.mention} .. I will restarting in 30s.. back soon.')
+    await botLogChan.send(f'{ctx.message.author.name}#{ctx.message.author.discriminator} called `restart`. I am restarting in 30s and will back soon hopefully.')
+    await asyncio.sleep(30)
+    await bot.logout()
+
+
 @bot.command(pass_context=True, name='about', help=bot_help_about)
 async def about(ctx):
     invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
@@ -214,6 +255,12 @@ async def webshot(ctx, website: str):
     # refer to limit
     user_check = await check_limit(ctx, website)
     if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
     domain = ''
@@ -313,6 +360,12 @@ async def whoisip(ctx, ip: str):
     if user_check:
         return
 
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
     # check if in redis
     try:
         openRedis()
@@ -400,6 +453,12 @@ async def a(ctx, domain: str):
     if user_check:
         return
 
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
     # check if in redis
     try:
         openRedis()
@@ -483,6 +542,12 @@ async def aaaa(ctx, domain: str):
     # refer to limit
     user_check = await check_limit(ctx, domain)
     if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
     # check if in redis
@@ -570,6 +635,12 @@ async def mx(ctx, domain: str):
     if user_check:
         return
 
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
     # check if in redis
     try:
         openRedis()
@@ -649,6 +720,12 @@ async def whois(ctx, domain: str):
     # refer to limit
     user_check = await check_limit(ctx, domain)
     if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
     # check if in redis
@@ -938,6 +1015,40 @@ async def get_last_query_user(user_id: str, user_server: str, lastDuration: int)
 
 async def is_owner(ctx):
     return ctx.author.id == config.discord.ownerID
+
+
+def is_maintenance():
+    global redis_conn
+    # Check if exist in redis
+    try:
+        openRedis()
+        key = 'DNSBOT:MAINTENANCE'
+        if redis_conn and redis_conn.exists(key):
+            return True
+        else:
+            return False
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+
+def set_maintenance(set_maint: bool = True):
+    global redis_conn
+    # Check if exist in redis
+    try:
+        openRedis()
+        key = 'DNSBOT:MAINTENANCE'
+        if set_maint == True:
+            if redis_conn and redis_conn.exists(key):
+                return True
+            else:
+                redis_conn.set(key, "ON")
+                return True
+        else:
+            if redis_conn and redis_conn.exists(key):
+                redis_conn.delete(key)
+            return True
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
 
 
 def is_valid_hostname(hostname):
