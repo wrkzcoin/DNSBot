@@ -131,6 +131,7 @@ async def on_ready():
 async def on_message(message):
     # ignore .help in public
     if message.content.upper().startswith('.HELP') and isinstance(message.channel, discord.DMChannel) == False:
+        await message.channel.send('Help command is available via Direct Message (DM) only.')
         return
     # Do not remove this, otherwise, command not working.
     ctx = await bot.get_context(message)
