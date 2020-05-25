@@ -128,6 +128,20 @@ async def on_ready():
 
 
 @bot.event
+async def on_guild_join(guild):
+    botLogChan = bot.get_channel(id=config.discord.logChan)
+    await botLogChan.send(f'Bot joins a new guild {guild.name} / {guild.id}. Total guilds: {len(bot.guilds)}.')
+    return
+
+
+@bot.event
+async def on_guild_remove(guild):
+    botLogChan = bot.get_channel(id=config.discord.logChan)
+    await botLogChan.send(f'Bot was removed from guild {guild.name} / {guild.id}. Total guilds: {len(bot.guilds)}')
+    return
+
+
+@bot.event
 async def on_message(message):
     # ignore .help in public
     if message.content.upper().startswith('.HELP') and isinstance(message.channel, discord.DMChannel) == False:
