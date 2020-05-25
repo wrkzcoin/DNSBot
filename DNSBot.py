@@ -59,6 +59,8 @@ myconfig = {
 connPool = pymysqlpool.ConnectionPool(size=4, name='connPool', **myconfig)
 conn = connPool.get_connection(timeout=5, retry_num=2)
 
+bot_help_about = "About DNSBot."
+bot_help_invite = "Invite link of bot to your server."
 bot_help_whois = "Whois an internet domain name."
 bot_help_mx = "Get mx record from a domain name."
 bot_help_a = "Get A (IPv4) record from a domain name."
@@ -160,6 +162,29 @@ async def on_raw_reaction_add(payload):
             except discord.errors.NotFound as e:
                 # No message found
                 return
+
+
+@bot.command(pass_context=True, name='about', help=bot_help_about)
+async def about(ctx):
+    invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
+    botdetails = discord.Embed(title='About Me', description='', colour=7047495)
+    botdetails.add_field(name='My Github:', value='https://github.com/wrkzcoin/DNSBot', inline=False)
+    botdetails.add_field(name='Invite Me:', value=f'{invite_link}', inline=False)
+    botdetails.add_field(name='Servers I am in:', value=len(bot.guilds), inline=False)
+    botdetails.set_footer(text='Made in Python3.6+ with discord.py library!', icon_url='http://findicons.com/files/icons/2804/plex/512/python.png')
+    botdetails.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
+    try:
+        await ctx.send(embed=botdetails)
+    except Exception as e:
+        await ctx.message.author.send(embed=botdetails)
+        traceback.print_exc(file=sys.stdout)
+
+
+@bot.command(pass_context=True, name='invite', aliases=['inviteme'], help=bot_help_invite)
+async def invite(ctx):
+    invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
+    await ctx.send('**[INVITE LINK]**\n\n'
+                f'{invite_link}')
 
 
 @bot.command(pass_context=True, name='whoisip', help=bot_help_whoisip)
