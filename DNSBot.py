@@ -216,12 +216,6 @@ async def webshot(ctx, website: str):
     if user_check:
         return
 
-    # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
-        await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
-        return
-
     domain = ''
     try:
         if not website.startswith('http://') and not website.startswith('https://'):
@@ -230,6 +224,24 @@ async def webshot(ctx, website: str):
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
+        return
+
+    # check if in redis
+    try:
+        openRedis()
+        if redis_conn and redis_conn.exists(f'DNSBOT:webshot_{domain}'):
+            response_txt = redis_conn.get(f'DNSBOT:webshot_{domain}').decode()
+            await ctx.message.add_reaction(EMOJI_FLOPPY)
+            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            await msg.add_reaction(EMOJI_OK_BOX)
+            return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
 
     if not is_valid_hostname(domain):
@@ -259,6 +271,13 @@ async def webshot(ctx, website: str):
                 response_txt = "Web screenshot for domain: **{}**\n".format(domain)
                 image_link = config.screenshot.given_site + subDir + "/" + filename
                 response_txt += image_link
+                # add to redis
+                try:
+                    openRedis()
+                    redis_conn.set(f'DNSBOT:webshot_{domain}', response_txt, ex=redis_expired)
+                except Exception as e:
+                    traceback.print_exc(file=sys.stdout)
+
                 msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
                 # add_screen_db
                 await add_screen_db(domain, image_link)
