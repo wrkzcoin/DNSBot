@@ -287,7 +287,7 @@ async def webshot(ctx, website: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -305,7 +305,8 @@ async def webshot(ctx, website: str):
             image_shot = await webshot_link(ctx, domain, config.screenshot.default_screensize)
             # await asyncio.sleep(100)
             # remove from process
-            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+            if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
             if image_shot:
                 # return path as image_shot
                 # create a directory if not exist 
@@ -380,7 +381,7 @@ async def whoisip(ctx, ip: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -393,7 +394,8 @@ async def whoisip(ctx, ip: str):
         obj = await whois_by_ip(ctx, ip)
         await asyncio.sleep(100)
         # remove from process
-        COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+        if ctx.message.author.id in COMMAND_IN_PROGRESS:
+            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
         if not obj:
             print(f"whoisip requested for {ip} not found any result ...")
             return
@@ -473,7 +475,7 @@ async def a(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -492,7 +494,8 @@ async def a(ctx, domain: str):
                 answers = await a_by_domain(ctx, domain)
                 await asyncio.sleep(100)
                 # remove from process
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
                 if answers and len(answers) > 0:
                     response_txt = "IPv4 (A) for DOMAIN: **{}**\n".format(domain)
                     response_txt += "```"
@@ -564,7 +567,7 @@ async def aaaa(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -583,7 +586,8 @@ async def aaaa(ctx, domain: str):
                 answers = await aaaa_by_domain(ctx, domain)
                 await asyncio.sleep(100)
                 # remove from process
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
                 if answers and len(answers) > 0:
                     response_txt = "IPv6 (AAAA) for DOMAIN: **{}**\n".format(domain)
                     response_txt += "```"
@@ -655,7 +659,7 @@ async def mx(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -674,7 +678,8 @@ async def mx(ctx, domain: str):
                 answers = await mx_by_domain(ctx, domain)
                 await asyncio.sleep(100)
                 # remove from process
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
                 if answers and len(answers) > 0:
                     response_txt = "MX for DOMAIN: **{}**\n".format(domain)
                     response_txt += "```"
@@ -742,7 +747,7 @@ async def whois(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -761,7 +766,8 @@ async def whois(ctx, domain: str):
                 domain_whois = await whois_by_domain(ctx, domain)
                 await asyncio.sleep(100)
                 # remove from process
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
                 if domain_whois.__dict__:
                     response_txt = "DOMAIN: **{}**\n".format(domain_whois.name)
                     response_txt += "```"
