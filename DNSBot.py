@@ -224,7 +224,7 @@ async def webshot(ctx, website: str):
 
     domain = ''
     try:
-        if not website.startswith('http://') or not website.startswith('https://'):
+        if not website.startswith('http://') and not website.startswith('https://'):
             website = 'http://' + website
         domain = urlparse(website).netloc
     except Exception as e:
