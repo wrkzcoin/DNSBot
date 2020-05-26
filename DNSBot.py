@@ -10,6 +10,7 @@ from config import config
 import click
 import sys, traceback
 import asyncio
+import aiohttp
 # ascii table
 from terminaltables import AsciiTable
 
@@ -85,6 +86,7 @@ bot_help_whoisip = "Whois IP."
 bot_help_webshot = "Get screenshot of a domain."
 bot_help_donate = "Donate to support DNSBot."
 bot_help_usage = "Show current stats"
+bot_help_header = "Get website header."
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
@@ -301,10 +303,11 @@ async def dnsbot(ctx):
     embed.add_field(name="Guilds", value='{:,.0f}'.format(len(bot.guilds)), inline=False)
     embed.add_field(name="Total User Online", value='{:,.0f}'.format(sum(1 for m in get_all_m if str(m.status) != 'offline')), inline=False)
     try:
-        get_7d_query = await count_last_duration_query(7*24*3600)
-        get_24h_query = await count_last_duration_query(24*3600)
-        get_1h_query = await count_last_duration_query(3600)
-        embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
+        get_7d_query = count_last_duration_query(7*24*3600)
+        get_24h_query = count_last_duration_query(24*3600)
+        get_1h_query = count_last_duration_query(3600)
+        if int(get_7d_query) and int(get_24h_query) and int(get_1h_query):
+            embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
 
@@ -323,6 +326,102 @@ async def dnsbot(ctx):
         await ctx.message.author.send(embed=embed)
         traceback.print_exc(file=sys.stdout)
     return
+
+
+@bot.command(pass_context=True, name='header', help=bot_help_header)
+async def header(ctx, website: str):
+    global COMMAND_IN_PROGRESS, redis_expired
+    # refer to limit
+    user_check = await check_limit(ctx, website)
+    if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
+    response_to = "> " + ctx.message.content[:256] + "\n"
+    domain = ''
+    try:
+        if not website.startswith('http://') and not website.startswith('https://'):
+            website = 'http://' + website
+        domain = urlparse(website).netloc
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
+        return
+
+    # check if in redis
+    try:
+        openRedis()
+        if redis_conn and redis_conn.exists(f'DNSBOT:header_{website}'):
+            response_txt = redis_conn.get(f'DNSBOT:header_{website}').decode()
+            await ctx.message.add_reaction(EMOJI_FLOPPY)
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+            await msg.add_reaction(EMOJI_OK_BOX)
+            return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        return
+
+    if not is_valid_hostname(domain):
+        await ctx.send(f'{ctx.author.mention} invalid given website {website} -> {domain}.')
+        return
+    else:
+        domain = domain.lower()
+        if not domain.startswith('http://') and not domain.startswith('https://'):
+            domain = 'http://' + domain
+        try:
+            await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
+            # if user already doing other command
+            if ctx.message.author.id not in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
+            
+            header = await get_header(domain)
+            # await asyncio.sleep(100)
+            if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+            if header:
+                response_txt = "Web header for domain: **{}**\n".format(domain)
+                response_txt += "```"
+                response_txt += "    Server:       {}\n".format(header['Server'])
+                response_txt += "    Content-Type: {}\n".format(header['Content-Type'])
+                response_txt += "```"
+                # add to redis
+                try:
+                    openRedis()
+                    redis_conn.set(f'DNSBOT:header_{domain}', response_txt, ex=redis_expired)
+                except Exception as e:
+                    traceback.print_exc(file=sys.stdout)
+
+                msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                # add_domain_header_db
+                header_items = []
+                for each, value in header.items():
+                    header_items.append("{}: {}".format(each, value))
+                await add_domain_header_db(domain, json.dumps(header_items), header['Server'], header['Content-Type'])
+                await msg.add_reaction(EMOJI_OK_BOX)
+                # insert insert_query_name
+                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "HEADER", response_txt, "DISCORD")
+            else:
+                msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get header for {domain}")
+                return
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+
+async def get_header(url):
+    async with aiohttp.ClientSession() as s:
+        async with s.head(url, allow_redirects=True) as r:
+            if r.headers: return r.headers
+    return False
 
 
 @bot.command(pass_context=True, name='webshot', help=bot_help_webshot)
@@ -1019,6 +1118,21 @@ async def add_screen_db(domain: str, screen_link: str):
     return False
 
 
+async def add_domain_header_db(domain: str, head_dump: str, server: str, content_type: str):
+    global conn
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ INSERT INTO header_db (`domain_name`, `head_date`, `head_dump`, `server`, `content_type`) 
+                      VALUES (%s, %s, %s, %s, %s) """
+            cur.execute(sql, (domain.lower(), int(time.time()), head_dump, server, content_type))
+            conn.commit()
+        return True
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
 async def add_domain_a_db(domain: str, a_records: str):
     global conn
     try:
@@ -1145,7 +1259,7 @@ async def count_last_user_query(user_id: str, lastDuration: int, user_server: st
     return False
 
 
-async def count_last_duration_query(lastDuration: int):
+def count_last_duration_query(lastDuration: int):
     global conn
     lapDuration = int(time.time()) - lastDuration
     try:
@@ -1157,7 +1271,6 @@ async def count_last_duration_query(lastDuration: int):
             return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-    return False
 
 
 async def is_owner(ctx):
