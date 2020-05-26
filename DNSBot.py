@@ -80,11 +80,12 @@ bot_help_a = "Get A (IPv4) record from a domain name."
 bot_help_aaaa = "Get AAAA (IPv6) record from a domain name."
 bot_help_whoisip = "Whois IP."
 bot_help_webshot = "Get screenshot of a domain."
+bot_help_donate = "Donate to support DNSBot."
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
 
-bot = AutoShardedBot(command_prefix=['.'], owner_id = config.discord.ownerID, case_insensitive=True)
+bot = AutoShardedBot(command_prefix=['.', 'dns.', 'dns!'], owner_id = config.discord.ownerID, case_insensitive=True)
 
 
 def init():
@@ -248,12 +249,33 @@ async def about(ctx):
     botdetails.add_field(name='My Github:', value='https://github.com/wrkzcoin/DNSBot', inline=False)
     botdetails.add_field(name='Invite Me:', value=f'{invite_link}', inline=False)
     botdetails.add_field(name='Servers I am in:', value=len(bot.guilds), inline=False)
+    botdetails.add_field(name='Supported by:', value='WrkzCoin Community Team', inline=False)
+    botdetails.add_field(name='Supported Server:', value='https://chat.wrkz.work', inline=False)
     botdetails.set_footer(text='Made in Python3.6+ with discord.py library!', icon_url='http://findicons.com/files/icons/2804/plex/512/python.png')
     botdetails.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
     try:
         await ctx.send(embed=botdetails)
     except Exception as e:
         await ctx.message.author.send(embed=botdetails)
+        traceback.print_exc(file=sys.stdout)
+
+
+@bot.command(pass_context=True, name='donate', help=bot_help_donate)
+async def donate(ctx):
+    invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
+    donatelist = discord.Embed(title='Support Me', description='', colour=7047495)
+    donatelist.add_field(name='BTC:', value=config.donate.btc, inline=False)
+    donatelist.add_field(name='LTC:', value=config.donate.ltc, inline=False)
+    donatelist.add_field(name='DOGE:', value=config.donate.doge, inline=False)
+    donatelist.add_field(name='BCH:', value=config.donate.bch, inline=False)
+    donatelist.add_field(name='DASH:', value=config.donate.dash, inline=False)
+    donatelist.add_field(name='XMR:', value=config.donate.xmr, inline=False)
+    donatelist.add_field(name='WRKZ:', value=config.donate.wrkz, inline=False)
+    donatelist.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
+    try:
+        await ctx.send(embed=donatelist)
+    except Exception as e:
+        await ctx.message.author.send(embed=donatelist)
         traceback.print_exc(file=sys.stdout)
 
 
@@ -278,6 +300,7 @@ async def webshot(ctx, website: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     domain = ''
     try:
         if not website.startswith('http://') and not website.startswith('https://'):
@@ -294,7 +317,7 @@ async def webshot(ctx, website: str):
         if redis_conn and redis_conn.exists(f'DNSBOT:webshot_{domain}'):
             response_txt = redis_conn.get(f'DNSBOT:webshot_{domain}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -341,12 +364,15 @@ async def webshot(ctx, website: str):
                 except Exception as e:
                     traceback.print_exc(file=sys.stdout)
 
-                msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
                 # add_screen_db
                 await add_screen_db(domain, image_link)
                 await msg.add_reaction(EMOJI_OK_BOX)
                 # insert insert_query_name
                 await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "SCREEN", response_txt, "DISCORD", image_link)
+            else:
+                msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for {domain}")
+                return
         except Exception as e:
             traceback.print_exc(file=sys.stdout)
 
@@ -363,7 +389,7 @@ async def webshot_link(ctx, website, window_size: str = '1920,1080'):
         return False
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        await ctx.send(f'{ctx.author.mention} Internal error.')
+        await ctx.send(f'> {ctx.message.content[:256]}\n{ctx.author.mention} Internal error.')
         return False
     return False
 
@@ -382,13 +408,14 @@ async def whoisip(ctx, ip: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     # check if in redis
     try:
         openRedis()
         if redis_conn and redis_conn.exists(f'DNSBOT:whoisip_{ip}'):
             response_txt = redis_conn.get(f'DNSBOT:whoisip_{ip}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -406,7 +433,7 @@ async def whoisip(ctx, ip: str):
         if ctx.message.author.id not in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
         obj = await whois_by_ip(ctx, ip)
-        await asyncio.sleep(100)
+        # await asyncio.sleep(100)
         # remove from process
         if ctx.message.author.id in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
@@ -415,10 +442,9 @@ async def whoisip(ctx, ip: str):
             return
         else:
             results = obj.lookup_whois()
-        print(f"whoisip requested for {ip} finished...")
 
         if not results:
-            await ctx.send(f'{ctx.author.mention} Failed to find IP information for {ip}. Please check later.')
+            await ctx.send(f'{response_to}{ctx.author.mention} Failed to find IP information for {ip}. Please check later.')
             return
         ipwhois_dump = json.dumps(results)
         if results:
@@ -439,17 +465,17 @@ async def whoisip(ctx, ip: str):
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)
 
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             # insert insert_query_name
             await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "IPWHOIS", response_txt, "DISCORD")
             # add to mx_db
             await add_domain_ipwhois_db(ip, ipwhois_dump)
         else:
-            await ctx.send(f'{ctx.author.mention} cannot find IP information for {ip}. Please check later.')
+            await ctx.send(f'{response_to}{ctx.author.mention} cannot find IP information for {ip}. Please check later.')
             return
     except ValueError:
-        await ctx.send(f'{ctx.author.mention} invalid given ip {ip}.')
+        await ctx.send(f'{response_to}{ctx.author.mention} invalid given ip {ip}.')
         return
 
 
@@ -476,13 +502,14 @@ async def a(ctx, domain: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     # check if in redis
     try:
         openRedis()
         if redis_conn and redis_conn.exists(f'DNSBOT:a_{domain}'):
             response_txt = redis_conn.get(f'DNSBOT:a_{domain}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -497,7 +524,7 @@ async def a(ctx, domain: str):
     domain = domain.lower()
     try:
         if not is_valid_hostname(domain):
-            await ctx.send(f'{ctx.author.mention} invalid given domain {domain}.')
+            await ctx.send(f'{response_to}{ctx.author.mention} invalid given domain {domain}.')
             return
         else:
             try:
@@ -506,7 +533,7 @@ async def a(ctx, domain: str):
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 answers = await a_by_domain(ctx, domain)
-                await asyncio.sleep(100)
+                # await asyncio.sleep(100)
                 # remove from process
                 if ctx.message.author.id in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
@@ -525,18 +552,18 @@ async def a(ctx, domain: str):
                     except Exception as e:
                         traceback.print_exc(file=sys.stdout)
 
-                    msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                    msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
                     await msg.add_reaction(EMOJI_OK_BOX)
                     # insert insert_query_name
                     await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "A", response_txt, "DISCORD")
                     # add to add_domain_a_db
                     await add_domain_a_db(domain, a_records)
                 else:
-                    await ctx.send(f'{ctx.author.mention} cannot find IPv4 information for {domain}. Please check later.')
+                    await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv4 information for {domain}. Please check later.')
                     return
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)
-                await ctx.send(f'{ctx.author.mention} cannot find IPv4 information for {domain}.')
+                await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv4 information for {domain}.')
                 return
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -568,13 +595,14 @@ async def aaaa(ctx, domain: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     # check if in redis
     try:
         openRedis()
         if redis_conn and redis_conn.exists(f'DNSBOT:aaaa_{domain}'):
             response_txt = redis_conn.get(f'DNSBOT:aaaa_{domain}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -583,7 +611,7 @@ async def aaaa(ctx, domain: str):
     # if user already doing other command
     if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
 
     domain = domain.lower()
@@ -598,7 +626,7 @@ async def aaaa(ctx, domain: str):
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 answers = await aaaa_by_domain(ctx, domain)
-                await asyncio.sleep(100)
+                # await asyncio.sleep(100)
                 # remove from process
                 if ctx.message.author.id in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
@@ -617,18 +645,18 @@ async def aaaa(ctx, domain: str):
                     except Exception as e:
                         traceback.print_exc(file=sys.stdout)
 
-                    msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                    msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
                     await msg.add_reaction(EMOJI_OK_BOX)
                     # insert insert_query_name
                     await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "AAAA", response_txt, "DISCORD")
                     # add to add_domain_a_db
                     await add_domain_aaaa_db(domain, aaaa_records)
                 else:
-                    await ctx.send(f'{ctx.author.mention} cannot find IPv6 information for {domain}. Please check later.')
+                    await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv6 information for {domain}. Please check later.')
                     return
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)
-                await ctx.send(f'{ctx.author.mention} cannot find IPv6 information for {domain}.')
+                await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv6 information for {domain}.')
                 return
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -660,13 +688,14 @@ async def mx(ctx, domain: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     # check if in redis
     try:
         openRedis()
         if redis_conn and redis_conn.exists(f'DNSBOT:mx_{domain}'):
             response_txt = redis_conn.get(f'DNSBOT:mx_{domain}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -675,13 +704,13 @@ async def mx(ctx, domain: str):
     # if user already doing other command
     if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
 
     domain = domain.lower()
     try:
         if not is_valid_hostname(domain):
-            await ctx.send(f'{ctx.author.mention} invalid given domain {domain}.')
+            await ctx.send(f'{response_to}{ctx.author.mention} invalid given domain {domain}.')
             return
         else:
             try:
@@ -690,7 +719,7 @@ async def mx(ctx, domain: str):
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 answers = await mx_by_domain(ctx, domain)
-                await asyncio.sleep(100)
+                # await asyncio.sleep(100)
                 # remove from process
                 if ctx.message.author.id in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
@@ -709,18 +738,18 @@ async def mx(ctx, domain: str):
                     except Exception as e:
                         traceback.print_exc(file=sys.stdout)
 
-                    msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                    msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
                     await msg.add_reaction(EMOJI_OK_BOX)
                     # insert insert_query_name
                     await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "MX", response_txt, "DISCORD")
                     # add to mx_db
                     await add_domain_mx_db(domain, mx_records)
                 else:
-                    await ctx.send(f'{ctx.author.mention} cannot find MX information for {domain}. Please check later.')
+                    await ctx.send(f'{response_to}{ctx.author.mention} cannot find MX information for {domain}. Please check later.')
                     return
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)
-                await ctx.send(f'{ctx.author.mention} cannot find MX information for {domain}.')
+                await ctx.send(f'{response_to}{ctx.author.mention} cannot find MX information for {domain}.')
                 return
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -748,13 +777,14 @@ async def whois(ctx, domain: str):
         await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
         return
 
+    response_to = "> " + ctx.message.content[:256] + "\n"
     # check if in redis
     try:
         openRedis()
         if redis_conn and redis_conn.exists(f'DNSBOT:whois_{domain}'):
             response_txt = redis_conn.get(f'DNSBOT:whois_{domain}').decode()
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
@@ -763,13 +793,13 @@ async def whois(ctx, domain: str):
     # if user already doing other command
     if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
         await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
 
     domain = domain.lower()
     try:
         if not is_valid_hostname(domain):
-            await ctx.send(f'{ctx.author.mention} invalid given domain {domain}.')
+            await ctx.send(f'{response_to}{ctx.author.mention} invalid given domain {domain}.')
             return
         else:
             try:
@@ -778,7 +808,7 @@ async def whois(ctx, domain: str):
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 domain_whois = await whois_by_domain(ctx, domain)
-                await asyncio.sleep(100)
+                # await asyncio.sleep(100)
                 # remove from process
                 if ctx.message.author.id in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
@@ -803,7 +833,7 @@ async def whois(ctx, domain: str):
                     except Exception as e:
                         traceback.print_exc(file=sys.stdout)
 
-                    msg = await ctx.send(f'{ctx.author.mention} {response_txt}')
+                    msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
                     await msg.add_reaction(EMOJI_OK_BOX)
                     # insert insert_query_name
                     await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "WHOIS", response_txt, "DISCORD")
@@ -816,13 +846,13 @@ async def whois(ctx, domain: str):
                 else:
                     # add to notfound
                     await add_domain_whois_db_notfound(domain, ctx.message.content, str(ctx.message.author.id), "DISCORD")
-                    await ctx.send(f'{ctx.author.mention} cannot find whois information for {domain}. Please check later.')
+                    await ctx.send(f'{response_to}{ctx.author.mention} cannot find whois information for {domain}. Please check later.')
                     return
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)
                 # add to notfound
                 await add_domain_whois_db_notfound(domain, ctx.message.content, str(ctx.message.author.id), "DISCORD")
-                await ctx.send(f'{ctx.author.mention} cannot find whois information for {domain}.')
+                await ctx.send(f'{response_to}{ctx.author.mention} cannot find whois information for {domain}.')
                 return
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
