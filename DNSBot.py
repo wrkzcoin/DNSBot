@@ -392,9 +392,18 @@ async def header(ctx, website: str):
             if header:
                 response_txt = "Web header for domain: **{}**\n".format(domain)
                 response_txt += "```"
-                response_txt += "    Server:       {}\n".format(header['Server'])
-                response_txt += "    Content-Type: {}\n".format(header['Content-Type'])
+                if 'Server' in header:
+                    response_txt += "    Server:       {}\n".format(header['Server'])
+                if 'Content-Type' in header:
+                    response_txt += "    Content-Type: {}\n".format(header['Content-Type'])
+                if 'Connection' in header:
+                    response_txt += "    Connection:   {}\n".format(header['Connection'])
+                if 'Date' in header:
+                    response_txt += "    Date:         {}\n".format(header['Date'])
                 response_txt += "```"
+                if 'Content-Type' not in header and 'Server' not in header:
+                    msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get header for {domain}")
+                    return
                 # add to redis
                 try:
                     openRedis()
@@ -407,7 +416,7 @@ async def header(ctx, website: str):
                 header_items = []
                 for each, value in header.items():
                     header_items.append("{}: {}".format(each, value))
-                await add_domain_header_db(domain, json.dumps(header_items), header['Server'], header['Content-Type'])
+                await add_domain_header_db(domain, json.dumps(header_items), header['Server'] if 'Server' in header else "N/A", header['Content-Type'] if 'Content-Type' in header else "N/A")
                 await msg.add_reaction(EMOJI_OK_BOX)
                 # insert insert_query_name
                 await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "HEADER", response_txt, "DISCORD")
