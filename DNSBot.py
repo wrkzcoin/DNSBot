@@ -36,6 +36,9 @@ import dns.name
 
 from typing import List, Dict
 
+# server load
+import psutil
+
 # screenshot
 import argparse
 from webscreenshot.webscreenshot import *
@@ -81,6 +84,7 @@ bot_help_aaaa = "Get AAAA (IPv6) record from a domain name."
 bot_help_whoisip = "Whois IP."
 bot_help_webshot = "Get screenshot of a domain."
 bot_help_donate = "Donate to support DNSBot."
+bot_help_usage = "Show current stats"
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
@@ -274,6 +278,7 @@ async def donate(ctx):
     donatelist.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
     try:
         await ctx.send(embed=donatelist)
+        return
     except Exception as e:
         await ctx.message.author.send(embed=donatelist)
         traceback.print_exc(file=sys.stdout)
@@ -284,6 +289,40 @@ async def invite(ctx):
     invite_link = "https://discordapp.com/oauth2/authorize?client_id="+str(bot.user.id)+"&scope=bot"
     await ctx.send('**[INVITE LINK]**\n\n'
                 f'{invite_link}')
+
+
+@bot.command(pass_context=True, name='dnsbot', help=bot_help_usage)
+async def dnsbot(ctx):
+    await bot.wait_until_ready()
+    get_all_m = bot.get_all_members()
+    embed = discord.Embed(title="[ DNSBot ]", description="Bot Stats", color=0xDEADBF)
+    embed.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
+    embed.add_field(name="Bot ID", value=str(bot.user.id), inline=False)
+    embed.add_field(name="Guilds", value='{:,.0f}'.format(len(bot.guilds)), inline=False)
+    embed.add_field(name="Total User Online", value='{:,.0f}'.format(sum(1 for m in get_all_m if str(m.status) != 'offline')), inline=False)
+    try:
+        get_7d_query = await count_last_duration_query(7*24*3600)
+        get_24h_query = await count_last_duration_query(24*3600)
+        get_1h_query = await count_last_duration_query(3600)
+        embed.add_field(name="Query 7d | 24h | 1h: ", value=str(f"{get_7d_query} | {get_24h_query} | {get_1h_query}"), inline=False)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    # get server load
+    try:
+        get_serverload = psutil.getloadavg()
+        get_serverload = [str(x) for x in get_serverload]
+        embed.add_field(name="Server Load: ", value=', '.join(get_serverload), inline=False)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    try:
+        await ctx.send(embed=embed)
+        return
+    except Exception as e:
+        await ctx.message.author.send(embed=embed)
+        traceback.print_exc(file=sys.stdout)
+    return
 
 
 @bot.command(pass_context=True, name='webshot', help=bot_help_webshot)
@@ -324,7 +363,7 @@ async def webshot(ctx, website: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -339,6 +378,7 @@ async def webshot(ctx, website: str):
             # if user already doing other command
             if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                 COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
             image_shot = await webshot_link(ctx, domain, config.screenshot.default_screensize)
             # await asyncio.sleep(100)
             # remove from process
@@ -422,7 +462,7 @@ async def whoisip(ctx, ip: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -432,6 +472,7 @@ async def whoisip(ctx, ip: str):
         # if user already doing other command
         if ctx.message.author.id not in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+            await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
         obj = await whois_by_ip(ctx, ip)
         # await asyncio.sleep(100)
         # remove from process
@@ -516,7 +557,7 @@ async def a(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -532,6 +573,7 @@ async def a(ctx, domain: str):
                 # if user already doing other command
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                    await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                 answers = await a_by_domain(ctx, domain)
                 # await asyncio.sleep(100)
                 # remove from process
@@ -609,7 +651,7 @@ async def aaaa(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -625,6 +667,7 @@ async def aaaa(ctx, domain: str):
                 # if user already doing other command
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                    await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                 answers = await aaaa_by_domain(ctx, domain)
                 # await asyncio.sleep(100)
                 # remove from process
@@ -702,7 +745,7 @@ async def mx(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -718,6 +761,7 @@ async def mx(ctx, domain: str):
                 # if user already doing other command
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                    await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                 answers = await mx_by_domain(ctx, domain)
                 # await asyncio.sleep(100)
                 # remove from process
@@ -791,7 +835,7 @@ async def whois(ctx, domain: str):
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID:
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
         return
@@ -807,6 +851,7 @@ async def whois(ctx, domain: str):
                 # if user already doing other command
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+                    await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                 domain_whois = await whois_by_domain(ctx, domain)
                 # await asyncio.sleep(100)
                 # remove from process
@@ -871,6 +916,12 @@ async def check_limit(ctx, domain):
     num_query = await get_last_query_user(str(ctx.message.author.id), "DISCORD", config.query.day_in_s)
     if num_query > config.query.limit:
         await ctx.send(f'{ctx.author.mention} You have reached limit of using today. Try again later tomorrow.')
+        return True
+
+    # check if user limit
+    num_query_per_mn = await count_last_user_query(str(ctx.message.author.id), 60, 'DISCORD')
+    if num_query_per_mn > config.query.limit_1_user_per_mn:
+        await ctx.send(f'{ctx.author.mention} You query too fast for last minute.')
         return True
 
     # if query name is block
@@ -1057,6 +1108,51 @@ async def get_last_query_user(user_id: str, user_server: str, lastDuration: int)
         with conn.cursor() as cur:
             sql = """ SELECT COUNT(*) FROM dns_query WHERE `user_id` = %s AND `user_server`=%s AND `date_query`>%s """
             cur.execute(sql, (user_id, user_server, lapDuration))
+            result = cur.fetchone()
+            return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
+async def add_query_to_queue(user_id: str, query_msg: str, user_server: str = 'DISCORD'):
+    global conn
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ INSERT INTO queue_list (`user_id`, `date_query`, `query_msg`, `user_server`) 
+                      VALUES (%s, %s, %s, %s) """
+            cur.execute(sql, (user_id, int(time.time()), query_msg, user_server))
+            conn.commit()
+        return True
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
+async def count_last_user_query(user_id: str, lastDuration: int, user_server: str = 'DISCORD'):
+    global conn
+    lapDuration = int(time.time()) - lastDuration
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ SELECT COUNT(*) FROM queue_list WHERE `user_id` = %s AND `date_query`>%s AND `user_server`=%s """
+            cur.execute(sql, (user_id, lapDuration, user_server))
+            result = cur.fetchone()
+            return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
+async def count_last_duration_query(lastDuration: int):
+    global conn
+    lapDuration = int(time.time()) - lastDuration
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ SELECT COUNT(*) FROM dns_query WHERE `date_query`>%s """
+            cur.execute(sql, (lapDuration))
             result = cur.fetchone()
             return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
     except Exception as e:
