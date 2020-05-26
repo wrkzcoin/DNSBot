@@ -304,7 +304,7 @@ async def dnsbot(ctx):
         get_7d_query = await count_last_duration_query(7*24*3600)
         get_24h_query = await count_last_duration_query(24*3600)
         get_1h_query = await count_last_duration_query(3600)
-        embed.add_field(name="Query 7d | 24h | 1h: ", value=str(f"{get_7d_query} | {get_24h_query} | {get_1h_query}"), inline=False)
+        embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
 
