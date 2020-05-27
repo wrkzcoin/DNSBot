@@ -87,6 +87,7 @@ bot_help_webshot = "Get screenshot of a domain."
 bot_help_donate = "Donate to support DNSBot."
 bot_help_usage = "Show current stats"
 bot_help_header = "Get website header."
+bot_help_duckgo = "Print search result from duckduckgo."
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
@@ -431,6 +432,107 @@ async def get_header(url):
         async with s.head(url, allow_redirects=True) as r:
             if r.headers: return r.headers
     return False
+
+
+@bot.command(pass_context=True, name='duckgo', aliases=['ddg'], help=bot_help_duckgo)
+async def duckgo(ctx, term: str, *, message):
+    global COMMAND_IN_PROGRESS, redis_expired
+    # refer to limit
+    user_check = await check_limit(ctx, message)
+    if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
+    response_to = "> " + ctx.message.content[:256] + "\n"
+    term = term.lower()
+    if term not in ["web", "image", "video", "news", "images", "videos"]:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{response_to}{ctx.author.mention} Please use any of this for term **web, image, video, news** and follow by key word.')
+        return
+
+    message = ' '.join(message.split())
+    if len(message) <= 3:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{response_to}{ctx.author.mention} keyword is too short.')
+        return
+    original_msg = message
+    message = message.replace(" ", "+")
+
+    link = "https://duckduckgo.com/?q=" + message + "&ia=" + term
+    if term == "image":
+        term = "images"
+        link = "https://duckduckgo.com/?q=" + message + "&iax=images&ia=images"
+    elif term == "video":
+        term = "videos"
+        link = "https://duckduckgo.com/?q=" + message + "&iax=videos&ia=videos"
+    elif term == "news":
+        link = "https://duckduckgo.com/?q=" + message + "&iar=news&ia=news"
+
+    # check if in redis
+    try:
+        openRedis()
+        if redis_conn and redis_conn.exists(f'DNSBOT:duckduckgo_{message}{term}'):
+            response_txt = redis_conn.get(f'DNSBOT:duckduckgo_{message}{term}').decode()
+            await ctx.message.add_reaction(EMOJI_FLOPPY)
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+            await msg.add_reaction(EMOJI_OK_BOX)
+            return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        return
+
+    try:
+        await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
+        # if user already doing other command
+        if ctx.message.author.id not in COMMAND_IN_PROGRESS:
+            COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+            await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
+        image_shot = await webshot_link(ctx, link, config.screenshot.default_screensize)
+        # await asyncio.sleep(100)
+        # remove from process
+        if ctx.message.author.id in COMMAND_IN_PROGRESS:
+            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+        if image_shot:
+            # return path as image_shot
+            # create a directory if not exist 
+            subDir = "duckduckgo/" + str(time.strftime("%Y-%m"))
+            dirName = config.screenshot.path_storage + subDir
+            filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_duckduckgo.com_" + str(uuid.uuid4()) + ".png"
+            if not os.path.exists(dirName):
+                os.mkdir(dirName)
+            # move file
+            shutil.move(image_shot, dirName + "/" + filename)
+            response_txt = "Search for **{}** for term **{}** in **{}**\n".format(original_msg, term, "duckduckgo")
+            image_link = config.screenshot.given_site + subDir + "/" + filename
+            response_txt += image_link
+            # add to redis
+            try:
+                openRedis()
+                redis_conn.set(f'DNSBOT:duckduckgo_{message}{term}', response_txt, ex=redis_expired)
+            except Exception as e:
+                traceback.print_exc(file=sys.stdout)
+
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+            # add_screen_weblink_db(link: str, stored_image: str)
+            await add_screen_weblink_db(link, image_link)
+            await msg.add_reaction(EMOJI_OK_BOX)
+            # insert insert_query_name
+            await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "DUCKGO", response_txt, "DISCORD", image_link)
+        else:
+            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for duckduckgo {original_msg}")
+            return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
 
 
 @bot.command(pass_context=True, name='webshot', help=bot_help_webshot)
@@ -1120,6 +1222,21 @@ async def add_screen_db(domain: str, screen_link: str):
             sql = """ INSERT INTO screen_db (`domain_name`, `taken_date`, `link`) 
                       VALUES (%s, %s, %s) """
             cur.execute(sql, (domain.lower(), int(time.time()), screen_link))
+            conn.commit()
+        return True
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
+async def add_screen_weblink_db(link: str, stored_image: str):
+    global conn
+    try:
+        openConnection()
+        with conn.cursor() as cur:
+            sql = """ INSERT INTO screen_weblink_db (`link`, `taken_date`, `stored_image`) 
+                      VALUES (%s, %s, %s) """
+            cur.execute(sql, (link, int(time.time()), stored_image))
             conn.commit()
         return True
     except Exception as e:
