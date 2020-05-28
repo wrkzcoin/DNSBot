@@ -41,7 +41,6 @@ from typing import List, Dict
 import psutil
 
 # screenshot
-import argparse
 from webscreenshot.webscreenshot import *
 # filter domain only
 if sys.version_info >= (3, 0):
@@ -515,6 +514,7 @@ async def duckgo(ctx, term: str, *, message):
             response_txt = "Search for **{}** for term **{}** in **{}**\n".format(original_msg, term, "duckduckgo")
             image_link = config.screenshot.given_site + subDir + "/" + filename
             response_txt += image_link
+            response_txt += "\nSearched link: " + link
             # add to redis
             try:
                 openRedis()
