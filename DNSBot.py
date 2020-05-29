@@ -461,6 +461,10 @@ async def duckgo(ctx, term: str, *, message):
         return
     original_msg = message
     message = message.replace(" ", "+")
+    if not is_ascii(message):
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{response_to}{ctx.author.mention} Please use only **ascii** text.')
+        return
 
     link = "https://duckduckgo.com/?q=" + message + "&ia=" + term
     if term == "image":
@@ -535,7 +539,7 @@ async def duckgo(ctx, term: str, *, message):
         traceback.print_exc(file=sys.stdout)
 
 
-@bot.command(pass_context=True, name='webshot', help=bot_help_webshot)
+@bot.command(pass_context=True, name='webshot', aliases=['ws'], help=bot_help_webshot)
 async def webshot(ctx, website: str):
     global COMMAND_IN_PROGRESS, redis_expired
     # refer to limit
@@ -631,7 +635,7 @@ async def webshot(ctx, website: str):
 async def webshot_link(ctx, website, window_size: str = '1920,1080'):
     try:
         random_dir = '/tmp/'+str(uuid.uuid4())+"/"
-        take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website])
+        take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website], encoding='utf-8')
         take_image.wait(timeout=12000)
         for file in os.listdir(random_dir):
             if os.path.isfile(os.path.join(random_dir, file)):
@@ -1444,6 +1448,11 @@ def is_valid_hostname(hostname):
         hostname = hostname[:-1] # strip exactly one dot from the right, if present
     allowed = re.compile("(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
     return all(allowed.match(x) for x in hostname.split("."))
+
+
+# function to return if input string is ascii
+def is_ascii(s):
+    return all(ord(c) < 128 for c in s)
 
 
 @click.command()
