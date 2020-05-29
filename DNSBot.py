@@ -1313,6 +1313,18 @@ async def mx_error(ctx, error):
     return
 
 
+@header.error
+async def header_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
+                             '```Example: .header domain.name```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    elif isinstance(error, commands.NotOwner) or isinstance(error, commands.MissingPermissions):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} This command requires Owner or Permission.')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
 @aaaa.error
 async def aaaa_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
