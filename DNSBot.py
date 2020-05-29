@@ -1277,6 +1277,80 @@ async def check_limit(ctx, domain):
     return False
 
 
+@whoisip.error
+async def whoisip_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing an ipv4 argument. '
+                       '```Example: .whoisip 8.8.8.8```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@whois.error
+async def whois_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
+                             '```Example: .whois google.com```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@a.error
+async def a_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
+                             '```Example: .a domain.name or .ipv4 domain.name```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@mx.error
+async def mx_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
+                             '```Example: .mx domain.name```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@aaaa.error
+async def aaaa_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
+                             '```Example: .aaaa domain.name or .ipv6 domain.name```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@webshot.error
+async def webshot_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing or incorrect a domain name. '
+                             '```Example: .webshot url or .ws url```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@duckgo.error
+async def duckgo_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument) or isinstance(error, commands.BadArgument) \
+    or isinstance(error, commands.UserInputError) or isinstance(error, commands.ArgumentParsingError):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing or incorrect arguments. '
+                             '```Please use: .duckgo <image|web|news|video> what you want to search```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
+@lmgtfy.error
+async def lmgtfy_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument) or isinstance(error, commands.BadArgument) \
+    or isinstance(error, commands.UserInputError) or isinstance(error, commands.ArgumentParsingError):
+        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing one or more arguments. '
+                             '```Example: .lmgtfy @member_name what you want to search```')
+        await msg.add_reaction(EMOJI_OK_BOX)
+    return
+
+
 async def insert_query_name(user_id: str, query_msg: str, query_type: str, query_response: str, user_server: str, image_name_screen: str = None):
     global conn
     try:
