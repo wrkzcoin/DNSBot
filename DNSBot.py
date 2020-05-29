@@ -87,6 +87,7 @@ bot_help_donate = "Donate to support DNSBot."
 bot_help_usage = "Show current stats"
 bot_help_header = "Get website header."
 bot_help_duckgo = "Print search result from duckduckgo."
+bot_help_lmgfy = "Show Let Me Google For You for someone."
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
@@ -328,7 +329,8 @@ async def dnsbot(ctx):
     return
 
 
-@bot.command(pass_context=True, name='header', help=bot_help_header)
+@commands.is_owner()
+@bot.command(pass_context=True, name='header', help=bot_help_header, hidden = True)
 async def header(ctx, website: str):
     global COMMAND_IN_PROGRESS, redis_expired
     # refer to limit
@@ -430,6 +432,123 @@ async def get_header(url):
     async with aiohttp.ClientSession() as s:
         async with s.head(url, allow_redirects=True) as r:
             if r.headers: return r.headers
+    return False
+
+
+
+@bot.command(pass_context=True, name='lmgfy', aliases=['lmg'], help=bot_help_lmgfy)
+async def lmgfy(ctx, member: discord.Member, *, message):
+    global COMMAND_IN_PROGRESS, redis_expired
+    # refer to limit
+    user_check = await check_limit(ctx, message)
+    if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
+    response_to = "> " + ctx.message.content[:256] + "\n"
+
+    message = ' '.join(message.split())
+    if len(message) <= 3:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{response_to}{ctx.author.mention} keyword is too short.')
+        return
+    original_msg = message
+    message = message.replace(" ", "+")
+    duration_recording = 6
+    if not is_ascii(message):
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{response_to}{ctx.author.mention} Please use only **ascii** text.')
+        return
+    link = "https://lmgtfy.com/?q=" + message
+
+    # check if in redis
+    try:
+        openRedis()
+        if redis_conn and redis_conn.exists(f'DNSBOT:lmgfy_{message}') and redis_conn.exists(f'DNSBOT:lmgfy_file_{message}'):
+            await ctx.message.add_reaction(EMOJI_FLOPPY)
+            response_txt = redis_conn.get(f'DNSBOT:lmgfy_{message}').decode()
+            screen_rec = redis_conn.get(f'DNSBOT:lmgfy_file_{message}').decode()
+            if os.path.isfile(screen_rec):
+                msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
+                await msg.add_reaction(EMOJI_OK_BOX)
+                return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        return
+
+    try:
+        await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
+        # if user already doing other command
+        if ctx.message.author.id not in COMMAND_IN_PROGRESS:
+            COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+            await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
+        if len(message) > 25:
+            duration_recording = 8
+        screen_rec = await lmgfy_link(ctx, link, duration_recording, 1280, 720)
+        # await asyncio.sleep(100)
+        # remove from process
+        if ctx.message.author.id in COMMAND_IN_PROGRESS:
+            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+        if screen_rec:
+            # send video file
+            try:
+                response_txt = f"would like to help you with this. And a link to it: {link}"
+                msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
+                await msg.add_reaction(EMOJI_OK_BOX)
+                # insert insert_query_name
+                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "LMGFY", response_txt, "DISCORD")
+                # add to redis
+                try:
+                    openRedis()
+                    redis_conn.set(f'DNSBOT:lmgfy_{message}', response_txt, ex=redis_expired)
+                    redis_conn.set(f'DNSBOT:lmgfy_file_{message}', screen_rec, ex=redis_expired)
+                except Exception as e:
+                    traceback.print_exc(file=sys.stdout)
+            except (discord.Forbidden, discord.errors.Forbidden) as e:
+                await ctx.message.add_reaction(EMOJI_ERROR)
+            return
+        else:
+            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot record for LMGFY {original_msg}")
+            return
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+
+
+async def lmgfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
+    try:
+        random_js = config.screenshot.temp_dir + str(uuid.uuid4())+".js"
+        video_create = config.screenshot.temp_dir + "/lmgfy-" + str(uuid.uuid4())+".mp4"
+        replacements = {'https://url.com/link-here': url, 'width_screen': str(w), 'height_screen': str(h), 'duration_taking': str(duration)}
+        with open(config.screenshot.screen_record_js) as infile, open(random_js, 'w') as outfile:
+            for line in infile:
+                for src, target in replacements.items():
+                    line = line.replace(src, target)
+                outfile.write(line)
+        command = f"xvfb-run phantomjs {random_js} | ffmpeg -y -c:v png -f image2pipe -r 24 -t 10  -i - -c:v libx264 -pix_fmt yuv420p -movflags +faststart {video_create}"
+        process_video = subprocess.Popen(command, shell=True)
+        process_video.wait(timeout=60000) # 60s waiting
+        try:
+            if os.path.isfile(video_create):
+                # remove random_js
+                os.unlink(random_js)
+                return video_create
+        except OSError as e:
+            traceback.print_exc(file=sys.stdout)
+        return False
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        await ctx.send(f'> {ctx.message.content[:256]}\n{ctx.author.mention} Internal error.')
+        return False
     return False
 
 
