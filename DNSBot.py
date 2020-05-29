@@ -87,7 +87,7 @@ bot_help_donate = "Donate to support DNSBot."
 bot_help_usage = "Show current stats"
 bot_help_header = "Get website header."
 bot_help_duckgo = "Print search result from duckduckgo."
-bot_help_lmgfy = "Show Let Me Google For You for someone."
+bot_help_lmgtfy = "Show Let Me Google For You for someone."
 
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
@@ -436,9 +436,14 @@ async def get_header(url):
 
 
 
-@bot.command(pass_context=True, name='lmgfy', aliases=['lmg'], help=bot_help_lmgfy)
-async def lmgfy(ctx, member: discord.Member, *, message):
+@bot.command(pass_context=True, name='lmgtfy', aliases=['lmg'], help=bot_help_lmgtfy)
+async def lmgtfy(ctx, member: discord.Member, *, message):
     global COMMAND_IN_PROGRESS, redis_expired
+    if isinstance(ctx.channel, discord.DMChannel) == True:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} This command not available in DM.')
+        return
+
     # refer to limit
     user_check = await check_limit(ctx, message)
     if user_check:
@@ -469,10 +474,10 @@ async def lmgfy(ctx, member: discord.Member, *, message):
     # check if in redis
     try:
         openRedis()
-        if redis_conn and redis_conn.exists(f'DNSBOT:lmgfy_{message}') and redis_conn.exists(f'DNSBOT:lmgfy_file_{message}'):
+        if redis_conn and redis_conn.exists(f'DNSBOT:lmgtfy_{message}') and redis_conn.exists(f'DNSBOT:lmgtfy_file_{message}'):
             await ctx.message.add_reaction(EMOJI_FLOPPY)
-            response_txt = redis_conn.get(f'DNSBOT:lmgfy_{message}').decode()
-            screen_rec = redis_conn.get(f'DNSBOT:lmgfy_file_{message}').decode()
+            response_txt = redis_conn.get(f'DNSBOT:lmgtfy_{message}').decode()
+            screen_rec = redis_conn.get(f'DNSBOT:lmgtfy_file_{message}').decode()
             if os.path.isfile(screen_rec):
                 msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
                 await msg.add_reaction(EMOJI_OK_BOX)
@@ -494,7 +499,7 @@ async def lmgfy(ctx, member: discord.Member, *, message):
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
         if len(message) > 25:
             duration_recording = 8
-        screen_rec = await lmgfy_link(ctx, link, duration_recording, 1280, 720)
+        screen_rec = await lmgtfy_link(ctx, link, duration_recording, 1280, 720)
         # await asyncio.sleep(100)
         # remove from process
         if ctx.message.author.id in COMMAND_IN_PROGRESS:
@@ -506,28 +511,28 @@ async def lmgfy(ctx, member: discord.Member, *, message):
                 msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
                 await msg.add_reaction(EMOJI_OK_BOX)
                 # insert insert_query_name
-                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "LMGFY", response_txt, "DISCORD")
+                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "LMGTFY", response_txt, "DISCORD")
                 # add to redis
                 try:
                     openRedis()
-                    redis_conn.set(f'DNSBOT:lmgfy_{message}', response_txt, ex=redis_expired)
-                    redis_conn.set(f'DNSBOT:lmgfy_file_{message}', screen_rec, ex=redis_expired)
+                    redis_conn.set(f'DNSBOT:lmgtfy_{message}', response_txt, ex=redis_expired)
+                    redis_conn.set(f'DNSBOT:lmgtfy_file_{message}', screen_rec, ex=redis_expired)
                 except Exception as e:
                     traceback.print_exc(file=sys.stdout)
             except (discord.Forbidden, discord.errors.Forbidden) as e:
                 await ctx.message.add_reaction(EMOJI_ERROR)
             return
         else:
-            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot record for LMGFY {original_msg}")
+            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot record for LMGTFY {original_msg}")
             return
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
 
 
-async def lmgfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
+async def lmgtfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
     try:
         random_js = config.screenshot.temp_dir + str(uuid.uuid4())+".js"
-        video_create = config.screenshot.temp_dir + "/lmgfy-" + str(uuid.uuid4())+".mp4"
+        video_create = config.screenshot.temp_dir + "/lmgtfy-" + str(uuid.uuid4())+".mp4"
         replacements = {'https://url.com/link-here': url, 'width_screen': str(w), 'height_screen': str(h), 'duration_taking': str(duration)}
         with open(config.screenshot.screen_record_js) as infile, open(random_js, 'w') as outfile:
             for line in infile:
