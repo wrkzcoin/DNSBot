@@ -154,8 +154,12 @@ async def on_guild_remove(guild):
 async def on_message(message):
     # ignore .help in public
     if message.content.upper().startswith('.HELP') and isinstance(message.channel, discord.DMChannel) == False:
-        await message.channel.send('Help command is available via Direct Message (DM) only.')
-        return
+        # WrkzCoin Server, Channel #botz
+        if message.guild.id == 460755304863498250 and message.channel.id == 475018504911716352:
+            await message.channel.send('Help command is available via Direct Message (DM) only.')
+            return
+        elif message.guild.id == 460755304863498250:
+            return
     # Do not remove this, otherwise, command not working.
     ctx = await bot.get_context(message)
     await bot.invoke(ctx)
