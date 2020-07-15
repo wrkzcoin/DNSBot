@@ -64,6 +64,7 @@ IS_RESTARTING = False
 pymysqlpool.logger.setLevel('DEBUG')
 myconfig = {
     'host': config.mysql.host,
+    'port': config.mysql.port,
     'user':config.mysql.user,
     'password':config.mysql.password,
     'database':config.mysql.db,
@@ -314,14 +315,6 @@ async def dnsbot(ctx):
         get_1h_query = count_last_duration_query(3600)
         if int(get_7d_query) and int(get_24h_query) and int(get_1h_query):
             embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-
-    # get server load
-    try:
-        get_serverload = psutil.getloadavg()
-        get_serverload = [str(x) for x in get_serverload]
-        embed.add_field(name="Server Load: ", value=', '.join(get_serverload), inline=False)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
 
