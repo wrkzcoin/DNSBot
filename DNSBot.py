@@ -95,7 +95,11 @@ bot_help_lmgtfy = "Show Let Me Google For You for someone."
 bot_help_admin_shutdown = "Restart bot."
 bot_help_admin_maintenance = "Bot to be in maintenance mode ON / OFF"
 
-bot = AutoShardedBot(command_prefix=['.', 'dns.', 'dns!'], owner_id = config.discord.ownerID, case_insensitive=True)
+intents = discord.Intents.default()
+intents.members = False
+intents.presences = False
+
+bot = AutoShardedBot(command_prefix=['.', 'dns.', 'dns!'], owner_id = config.discord.ownerID, case_insensitive=True, intents=intents)
 
 
 def init():
@@ -323,11 +327,18 @@ async def dnsbot(ctx):
     embed.set_author(name=bot.user.name, icon_url=bot.user.avatar_url)
     embed.add_field(name="Bot ID", value=str(bot.user.id), inline=False)
     embed.add_field(name="Guilds", value='{:,.0f}'.format(len(bot.guilds)), inline=False)
-    embed.add_field(name="Total User Online", value='{:,.0f}'.format(sum(1 for m in get_all_m if str(m.status) != 'offline')), inline=False)
+    embed.add_field(name="Total User", value='{:,.0f}'.format(sum([x.member_count for x in bot.guilds])), inline=False)
     try:
         get_7d_query = count_last_duration_query(7*24*3600)
         get_24h_query = count_last_duration_query(24*3600)
         get_1h_query = count_last_duration_query(3600)
+        # get server load	
+        try:	
+            get_serverload = psutil.getloadavg()	
+            get_serverload = [str(x) for x in get_serverload]	
+            embed.add_field(name="Server Load: ", value=', '.join(get_serverload), inline=False)	
+        except Exception as e:	
+            traceback.print_exc(file=sys.stdout)
         if int(get_7d_query) and int(get_24h_query) and int(get_1h_query):
             embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
     except Exception as e:
