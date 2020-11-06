@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import Bot, AutoShardedBot, when_mentioned_or, CheckFailure
 from discord.utils import get
+from discord_webhook import DiscordWebhook
+import functools
 
 import os
 import time, timeago
@@ -121,6 +123,17 @@ def openConnection():
     except:
         print("ERROR: Unexpected error: Could not connect to MySql instance.")
         sys.exit()
+
+
+async def logchanbot(content: str):
+    filterword = config.discord.logfilterword.split(",")
+    for each in filterword:
+        content = content.replace(each, config.discord.filteredwith)
+    try:
+        webhook = DiscordWebhook(url=config.discord.botdbghook, content=f'```{discord.utils.escape_markdown(content)}```')
+        webhook.execute()
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
 
 
 @bot.event
@@ -269,6 +282,7 @@ async def about(ctx):
     try:
         await ctx.send(embed=botdetails)
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         await ctx.message.author.send(embed=botdetails)
         traceback.print_exc(file=sys.stdout)
 
@@ -289,6 +303,7 @@ async def donate(ctx):
         await ctx.send(embed=donatelist)
         return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         await ctx.message.author.send(embed=donatelist)
         traceback.print_exc(file=sys.stdout)
 
@@ -316,12 +331,14 @@ async def dnsbot(ctx):
         if int(get_7d_query) and int(get_24h_query) and int(get_1h_query):
             embed.add_field(name="Query 7d | 24h | 1h: ", value=f"{str(get_7d_query)} | {str(get_24h_query)} | {str(get_1h_query)}", inline=False)
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     try:
         await ctx.send(embed=embed)
         return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         await ctx.message.author.send(embed=embed)
         traceback.print_exc(file=sys.stdout)
     return
@@ -349,6 +366,7 @@ async def header(ctx, website: str):
             website = 'http://' + website
         domain = urlparse(website).netloc
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
         await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
         return
@@ -363,6 +381,7 @@ async def header(ctx, website: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -409,6 +428,7 @@ async def header(ctx, website: str):
                     openRedis()
                     redis_conn.set(f'DNSBOT:header_{domain}', response_txt, ex=redis_expired)
                 except Exception as e:
+                    await logchanbot(traceback.format_exc())
                     traceback.print_exc(file=sys.stdout)
 
                 msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
@@ -424,6 +444,7 @@ async def header(ctx, website: str):
                 msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get header for {domain}")
                 return
         except Exception as e:
+            await logchanbot(traceback.format_exc())
             traceback.print_exc(file=sys.stdout)
 
 async def get_header(url):
@@ -481,6 +502,7 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
                 await msg.add_reaction(EMOJI_OK_BOX)
                 return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -495,35 +517,43 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
         if ctx.message.author.id not in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-        if len(message) > 25:
-            duration_recording = 8
-        screen_rec = await lmgtfy_link(ctx, link, duration_recording, 1280, 720)
-        # await asyncio.sleep(100)
-        # remove from process
-        if ctx.message.author.id in COMMAND_IN_PROGRESS:
-            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-        if screen_rec:
-            # send video file
-            try:
-                response_txt = f"would like to help you with this. And a link to it: {link}"
-                msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
-                await msg.add_reaction(EMOJI_OK_BOX)
-                # insert insert_query_name
-                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "LMGTFY", response_txt, "DISCORD")
-                # add to redis
-                try:
-                    openRedis()
-                    redis_conn.set(f'DNSBOT:lmgtfy_{message}', response_txt, ex=redis_expired)
-                    redis_conn.set(f'DNSBOT:lmgtfy_file_{message}', screen_rec, ex=redis_expired)
-                except Exception as e:
-                    traceback.print_exc(file=sys.stdout)
-            except (discord.Forbidden, discord.errors.Forbidden) as e:
-                await ctx.message.add_reaction(EMOJI_ERROR)
+            if len(message) > 25:
+                duration_recording = 8
+            async with ctx.typing():
+                screen_rec_func = functools.partial(lmgtfy_link, ctx, link, duration_recording, 1280, 720)
+                screen_rec = await bot.loop.run_in_executor(None, screen_rec_func)
+                # await asyncio.sleep(100)
+                if screen_rec:
+                    # send video file
+                    try:
+                        response_txt = f"would like to help you with this. And a link to it: {link}"
+                        msg = await ctx.send(f"{response_to}{member.mention}, {ctx.message.author.mention} {response_txt}", file=discord.File(screen_rec))
+                        await msg.add_reaction(EMOJI_OK_BOX)
+                        # insert insert_query_name
+                        await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "LMGTFY", response_txt, "DISCORD")
+                        # add to redis
+                        try:
+                            openRedis()
+                            redis_conn.set(f'DNSBOT:lmgtfy_{message}', response_txt, ex=redis_expired)
+                            redis_conn.set(f'DNSBOT:lmgtfy_file_{message}', screen_rec, ex=redis_expired)
+                        except Exception as e:
+                            await logchanbot(traceback.format_exc())
+                            traceback.print_exc(file=sys.stdout)
+                    except (discord.Forbidden, discord.errors.Forbidden) as e:
+                        await logchanbot(traceback.format_exc())
+                        await ctx.message.add_reaction(EMOJI_ERROR)
+                else:
+                    msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot record for LMGTFY {original_msg}")
+            # remove from process
+            if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
             return
         else:
-            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot record for LMGTFY {original_msg}")
+            await ctx.message.add_reaction(EMOJI_ERROR)
+            await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 
@@ -546,12 +576,11 @@ async def lmgtfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
                 os.unlink(random_js)
                 return video_create
         except OSError as e:
+            await logchanbot(traceback.format_exc())
             traceback.print_exc(file=sys.stdout)
-        return False
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
-        await ctx.send(f'> {ctx.message.content[:256]}\n{ctx.author.mention} Internal error.')
-        return False
     return False
 
 
@@ -608,6 +637,7 @@ async def duckgo(ctx, term: str, *, message):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -622,42 +652,45 @@ async def duckgo(ctx, term: str, *, message):
         if ctx.message.author.id not in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-        image_shot = await webshot_link(ctx, link, config.screenshot.default_screensize)
-        # await asyncio.sleep(100)
-        # remove from process
-        if ctx.message.author.id in COMMAND_IN_PROGRESS:
-            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-        if image_shot:
-            # return path as image_shot
-            # create a directory if not exist 
-            subDir = "duckduckgo/" + str(time.strftime("%Y-%m"))
-            dirName = config.screenshot.path_storage + subDir
-            filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_duckduckgo.com_" + str(uuid.uuid4()) + ".png"
-            if not os.path.exists(dirName):
-                os.mkdir(dirName)
-            # move file
-            shutil.move(image_shot, dirName + "/" + filename)
-            response_txt = "Search for **{}** for term **{}** in **{}**\n".format(original_msg, term, "duckduckgo")
-            image_link = config.screenshot.given_site + subDir + "/" + filename
-            response_txt += image_link
-            response_txt += "\nSearched link: " + link
-            # add to redis
-            try:
-                openRedis()
-                redis_conn.set(f'DNSBOT:duckduckgo_{message}{term}', response_txt, ex=redis_expired)
-            except Exception as e:
-                traceback.print_exc(file=sys.stdout)
+        async with ctx.typing():
+            image_shot_func = functools.partial(webshot_link, ctx, link, config.screenshot.default_screensize)
+            image_shot = await bot.loop.run_in_executor(None, image_shot_func)
+            if image_shot:
+                # return path as image_shot
+                # create a directory if not exist 
+                subDir = "duckduckgo/" + str(time.strftime("%Y-%m"))
+                dirName = config.screenshot.path_storage + subDir
+                filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_duckduckgo.com_" + str(uuid.uuid4()) + ".png"
+                if not os.path.exists(dirName):
+                    os.mkdir(dirName)
+                # move file
+                shutil.move(image_shot, dirName + "/" + filename)
+                response_txt = "Search for **{}** for term **{}** in **{}**\n".format(original_msg, term, "duckduckgo")
+                image_link = config.screenshot.given_site + subDir + "/" + filename
+                response_txt += image_link
+                response_txt += "\nSearched link: " + link
+                # add to redis
+                try:
+                    openRedis()
+                    redis_conn.set(f'DNSBOT:duckduckgo_{message}{term}', response_txt, ex=redis_expired)
+                except Exception as e:
+                    await logchanbot(traceback.format_exc())
+                    traceback.print_exc(file=sys.stdout)
 
-            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-            # add_screen_weblink_db(link: str, stored_image: str)
-            await add_screen_weblink_db(link, image_link)
-            await msg.add_reaction(EMOJI_OK_BOX)
-            # insert insert_query_name
-            await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "DUCKGO", response_txt, "DISCORD", image_link)
-        else:
-            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for duckduckgo {original_msg}")
+                msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                # add_screen_weblink_db(link: str, stored_image: str)
+                await add_screen_weblink_db(link, image_link)
+                await msg.add_reaction(EMOJI_OK_BOX)
+                # insert insert_query_name
+                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "DUCKGO", response_txt, "DISCORD", image_link)
+            else:
+                msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for duckduckgo {original_msg}")
+                    # remove from process
+            if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 
@@ -682,6 +715,7 @@ async def webshot(ctx, website: str):
             website = 'http://' + website
         domain = urlparse(website).netloc
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
         await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
         return
@@ -696,6 +730,7 @@ async def webshot(ctx, website: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -715,46 +750,61 @@ async def webshot(ctx, website: str):
             if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                 COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-            image_shot = await webshot_link(ctx, domain, config.screenshot.default_screensize)
-            # await asyncio.sleep(100)
-            # remove from process
-            if ctx.message.author.id in COMMAND_IN_PROGRESS:
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-            if image_shot:
-                # return path as image_shot
-                # create a directory if not exist 
-                subDir = str(time.strftime("%Y-%m"))
-                dirName = config.screenshot.path_storage + subDir
-                filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_" + domain + ".png"
-                if not os.path.exists(dirName):
-                    os.mkdir(dirName)
-                # move file
-                shutil.move(image_shot, dirName + "/" + filename)
-                response_txt = "Web screenshot for domain: **{}**\n".format(domain)
-                image_link = config.screenshot.given_site + subDir + "/" + filename
-                response_txt += image_link
-                # add to redis
-                try:
-                    openRedis()
-                    redis_conn.set(f'DNSBOT:webshot_{domain}', response_txt, ex=redis_expired)
-                except Exception as e:
-                    traceback.print_exc(file=sys.stdout)
-
-                msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-                # add_screen_db
-                await add_screen_db(domain, image_link)
-                await msg.add_reaction(EMOJI_OK_BOX)
-                # insert insert_query_name
-                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "SCREEN", response_txt, "DISCORD", image_link)
+                async with ctx.typing():
+                    image_shot_func = functools.partial(webshot_link, ctx, domain, config.screenshot.default_screensize)
+                    image_shot = await bot.loop.run_in_executor(None, image_shot_func)
+                    if image_shot:
+                        # return path as image_shot
+                        # create a directory if not exist 
+                        subDir = str(time.strftime("%Y-%m"))
+                        dirName = config.screenshot.path_storage + subDir
+                        filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_" + domain + ".png"
+                        if not os.path.exists(dirName):
+                            os.mkdir(dirName)
+                        # move file
+                        shutil.move(image_shot, dirName + "/" + filename)
+                        response_txt = "Web screenshot for domain: **{}**\n".format(domain)
+                        image_link = config.screenshot.given_site + subDir + "/" + filename
+                        response_txt += image_link
+                        # add to redis
+                        try:
+                            openRedis()
+                            redis_conn.set(f'DNSBOT:webshot_{domain}', response_txt, ex=redis_expired)
+                        except Exception as e:
+                            await logchanbot(traceback.format_exc())
+                            traceback.print_exc(file=sys.stdout)
+                        
+                        # Try send message
+                        try:
+                            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                        except Exception as e:
+                            await logchanbot(traceback.format_exc())
+                            traceback.print_exc(file=sys.stdout)
+                        # add_screen_db
+                        await add_screen_db(domain, image_link)
+                        await msg.add_reaction(EMOJI_OK_BOX)
+                        # insert insert_query_name
+                        await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "SCREEN", response_txt, "DISCORD", image_link)
+                    else:
+                        try:
+                            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for {domain}")
+                        except Exception as e:
+                            await logchanbot(traceback.format_exc())
+                            traceback.print_exc(file=sys.stdout)
+                    # remove from process
+                    if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                        COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                    return
             else:
-                msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for {domain}")
+                await ctx.message.add_reaction(EMOJI_ERROR)
+                await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
                 return
         except Exception as e:
+            await logchanbot(traceback.format_exc())
             traceback.print_exc(file=sys.stdout)
 
 
-
-async def webshot_link(ctx, website, window_size: str = '1920,1080'):
+def webshot_link(ctx, website, window_size: str = '1920,1080'):
     try:
         random_dir = '/tmp/'+str(uuid.uuid4())+"/"
         take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website], encoding='utf-8')
@@ -765,8 +815,6 @@ async def webshot_link(ctx, website, window_size: str = '1920,1080'):
         return False
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        await ctx.send(f'> {ctx.message.content[:256]}\n{ctx.author.mention} Internal error.')
-        return False
     return False
 
 
@@ -795,6 +843,7 @@ async def whoisip(ctx, ip: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -809,59 +858,71 @@ async def whoisip(ctx, ip: str):
         if ctx.message.author.id not in COMMAND_IN_PROGRESS:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-        obj = await whois_by_ip(ctx, ip)
-        # await asyncio.sleep(100)
-        # remove from process
-        if ctx.message.author.id in COMMAND_IN_PROGRESS:
-            COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-        if not obj:
-            print(f"whoisip requested for {ip} not found any result ...")
-            return
+            async with ctx.typing():
+                results = None
+                obj_func = functools.partial(whois_by_ip, ctx, ip)
+                obj = await bot.loop.run_in_executor(None, obj_func)
+                # remove from process
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if not obj:
+                    print(f"whoisip requested for {ip} not found any result ...")
+                else:
+                    results = obj.lookup_whois()
+                if not results:
+                    try:
+                        await ctx.send(f'{response_to}{ctx.author.mention} Failed to find IP information for {ip}. Please check later.')
+                    except Exception as e:
+                        pass
+                ipwhois_dump = json.dumps(results)
+                if results:
+                    response_txt = "Info for IP: **{}**\n".format(ip)
+                    response_txt += "```"
+                    response_txt += "    ASN:       {}\n".format(results['asn'])
+                    response_txt += "    ASN CIDR:  {}\n".format(results['asn_cidr'])
+                    response_txt += "    COUNTRY:   {}\n".format(results['asn_country_code'])
+                    response_txt += "    ASN DATE:  {}\n".format(results['asn_date'])
+                    response_txt += "    DESC:      {}\n".format(results['asn_description'])
+                    response_txt += "    REGISTRY:  {}\n".format(results['asn_registry'])
+                    response_txt += "    NET. RANGE:{}".format(', '.join([item['range'] for item in results['nets'] if item['range']]))
+                    response_txt += "```"
+                    # add to redis
+                    try:
+                        openRedis()
+                        redis_conn.set(f'DNSBOT:whoisip_{ip}', response_txt, ex=redis_expired)
+                    except Exception as e:
+                        await logchanbot(traceback.format_exc())
+                        traceback.print_exc(file=sys.stdout)
+                    try:
+                        msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                        await msg.add_reaction(EMOJI_OK_BOX)
+                    except Exception as e:
+                        pass
+                    # insert insert_query_name
+                    await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "IPWHOIS", response_txt, "DISCORD")
+                    # add to mx_db
+                    await add_domain_ipwhois_db(ip, ipwhois_dump)
+                else:
+                    try:
+                        await ctx.send(f'{response_to}{ctx.author.mention} cannot find IP information for {ip}. Please check later.')
+                    except Exception as e:
+                        pass
+                return
         else:
-            results = obj.lookup_whois()
-
-        if not results:
-            await ctx.send(f'{response_to}{ctx.author.mention} Failed to find IP information for {ip}. Please check later.')
-            return
-        ipwhois_dump = json.dumps(results)
-        if results:
-            response_txt = "Info for IP: **{}**\n".format(ip)
-            response_txt += "```"
-            response_txt += "    ASN:       {}\n".format(results['asn'])
-            response_txt += "    ASN CIDR:  {}\n".format(results['asn_cidr'])
-            response_txt += "    COUNTRY:   {}\n".format(results['asn_country_code'])
-            response_txt += "    ASN DATE:  {}\n".format(results['asn_date'])
-            response_txt += "    DESC:      {}\n".format(results['asn_description'])
-            response_txt += "    REGISTRY:  {}\n".format(results['asn_registry'])
-            response_txt += "    NET. RANGE:{}".format(', '.join([item['range'] for item in results['nets'] if item['range']]))
-            response_txt += "```"
-            # add to redis
-            try:
-                openRedis()
-                redis_conn.set(f'DNSBOT:whoisip_{ip}', response_txt, ex=redis_expired)
-            except Exception as e:
-                traceback.print_exc(file=sys.stdout)
-
-            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-            await msg.add_reaction(EMOJI_OK_BOX)
-            # insert insert_query_name
-            await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "IPWHOIS", response_txt, "DISCORD")
-            # add to mx_db
-            await add_domain_ipwhois_db(ip, ipwhois_dump)
-        else:
-            await ctx.send(f'{response_to}{ctx.author.mention} cannot find IP information for {ip}. Please check later.')
+            await ctx.message.add_reaction(EMOJI_ERROR)
+            await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
             return
     except ValueError:
+        await logchanbot(traceback.format_exc())
         await ctx.send(f'{response_to}{ctx.author.mention} invalid given ip {ip}.')
         return
 
 
-async def whois_by_ip(ctx, ip):
+def whois_by_ip(ctx, ip):
     try:
         obj = IPWhois(ip)
         return obj
     except ipwhois.exceptions.IPDefinedError:
-        await ctx.send(f'{ctx.author.mention} IP address  {ip} is already defined as Private-Use Networks via RFC 1918 invalid given ip.')
         return False
 
 
@@ -890,6 +951,7 @@ async def a(ctx, domain: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -928,6 +990,7 @@ async def a(ctx, domain: str):
                         openRedis()
                         redis_conn.set(f'DNSBOT:a_{domain}', response_txt, ex=redis_expired)
                     except Exception as e:
+                        await logchanbot(traceback.format_exc())
                         traceback.print_exc(file=sys.stdout)
 
                     msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
@@ -940,10 +1003,12 @@ async def a(ctx, domain: str):
                     await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv4 information for {domain}. Please check later.')
                     return
             except Exception as e:
+                await logchanbot(traceback.format_exc())
                 traceback.print_exc(file=sys.stdout)
                 await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv4 information for {domain}.')
                 return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 async def a_by_domain(ctx, domain):
@@ -955,6 +1020,7 @@ async def a_by_domain(ctx, domain):
         else:
             return False
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -984,6 +1050,7 @@ async def aaaa(ctx, domain: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -1022,6 +1089,7 @@ async def aaaa(ctx, domain: str):
                         openRedis()
                         redis_conn.set(f'DNSBOT:aaaa_{domain}', response_txt, ex=redis_expired)
                     except Exception as e:
+                        await logchanbot(traceback.format_exc())
                         traceback.print_exc(file=sys.stdout)
 
                     msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
@@ -1034,10 +1102,12 @@ async def aaaa(ctx, domain: str):
                     await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv6 information for {domain}. Please check later.')
                     return
             except Exception as e:
+                await logchanbot(traceback.format_exc())
                 traceback.print_exc(file=sys.stdout)
                 await ctx.send(f'{response_to}{ctx.author.mention} cannot find IPv6 information for {domain}.')
                 return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 async def aaaa_by_domain(ctx, domain):
@@ -1049,6 +1119,7 @@ async def aaaa_by_domain(ctx, domain):
         else:
             return False
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1078,6 +1149,7 @@ async def mx(ctx, domain: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -1116,6 +1188,7 @@ async def mx(ctx, domain: str):
                         openRedis()
                         redis_conn.set(f'DNSBOT:mx_{domain}', response_txt, ex=redis_expired)
                     except Exception as e:
+                        await logchanbot(traceback.format_exc())
                         traceback.print_exc(file=sys.stdout)
 
                     msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
@@ -1128,10 +1201,12 @@ async def mx(ctx, domain: str):
                     await ctx.send(f'{response_to}{ctx.author.mention} cannot find MX information for {domain}. Please check later.')
                     return
             except Exception as e:
+                await logchanbot(traceback.format_exc())
                 traceback.print_exc(file=sys.stdout)
                 await ctx.send(f'{response_to}{ctx.author.mention} cannot find MX information for {domain}.')
                 return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 
@@ -1139,6 +1214,7 @@ async def mx_by_domain(ctx, domain):
     try:
         return dns.resolver.query(domain.lower(), 'MX')
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1168,6 +1244,7 @@ async def whois(ctx, domain: str):
             await msg.add_reaction(EMOJI_OK_BOX)
             return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
     # if user already doing other command
@@ -1188,58 +1265,64 @@ async def whois(ctx, domain: str):
                 if ctx.message.author.id not in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                     await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-                domain_whois = await whois_by_domain(ctx, domain)
-                # await asyncio.sleep(100)
+                    async with ctx.typing():
+                        domain_whois_func = functools.partial(whois_by_domain, ctx, domain)
+                        domain_whois = await bot.loop.run_in_executor(None, domain_whois_func)
+                        if domain_whois.__dict__:
+                            response_txt = "DOMAIN: **{}**\n".format(domain_whois.name)
+                            response_txt += "```"
+                            response_txt += "registrar: {}\n".format(domain_whois.registrar)
+                            response_txt += f"creation_date: {domain_whois.creation_date:%Y-%m-%d}\n"
+                            response_txt += f"expiration_date: {domain_whois.expiration_date:%Y-%m-%d}\n"
+                            if domain_whois.last_updated: response_txt += f"last_updated: {domain_whois.last_updated:%Y-%m-%d}\n"
+                            nameservers = ""
+                            if len(domain_whois.name_servers) >= 1:
+                                response_txt += "name_servers:\n"
+                                for each in domain_whois.name_servers:
+                                    nameservers += each + "\n"
+                                    response_txt += f"    {each}\n"
+                            response_txt += "```"
+                            # add to redis
+                            try:
+                                openRedis()
+                                redis_conn.set(f'DNSBOT:whois_{domain}', response_txt, ex=redis_expired)
+                            except Exception as e:
+                                await logchanbot(traceback.format_exc())
+                                traceback.print_exc(file=sys.stdout)
+
+                            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                            await msg.add_reaction(EMOJI_OK_BOX)
+                            # insert insert_query_name
+                            await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "WHOIS", response_txt, "DISCORD")
+                            # add to whois_db
+                            if domain_whois.last_updated:
+                                await add_domain_whois_db(domain, domain_whois.registrar, nameservers, f"{domain_whois.creation_date:%Y-%m-%d}", f"{domain_whois.expiration_date:%Y-%m-%d}", f"{domain_whois.last_updated:%Y-%m-%d}")
+                            else:
+                                await add_domain_whois_db(domain, domain_whois.registrar, nameservers, f"{domain_whois.creation_date:%Y-%m-%d}", f"{domain_whois.expiration_date:%Y-%m-%d}")
+                        else:
+                            # add to notfound
+                            await add_domain_whois_db_notfound(domain, ctx.message.content, str(ctx.message.author.id), "DISCORD")
+                            await ctx.send(f'{response_to}{ctx.author.mention} cannot find whois information for {domain}. Please check later.')
+                else:
+                    await ctx.message.add_reaction(EMOJI_ERROR)
+                    await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
                 # remove from process
                 if ctx.message.author.id in COMMAND_IN_PROGRESS:
                     COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-                if domain_whois.__dict__:
-                    response_txt = "DOMAIN: **{}**\n".format(domain_whois.name)
-                    response_txt += "```"
-                    response_txt += "registrar: {}\n".format(domain_whois.registrar)
-                    response_txt += f"creation_date: {domain_whois.creation_date:%Y-%m-%d}\n"
-                    response_txt += f"expiration_date: {domain_whois.expiration_date:%Y-%m-%d}\n"
-                    if domain_whois.last_updated: response_txt += f"last_updated: {domain_whois.last_updated:%Y-%m-%d}\n"
-                    nameservers = ""
-                    if len(domain_whois.name_servers) >= 1:
-                        response_txt += "name_servers:\n"
-                        for each in domain_whois.name_servers:
-                            nameservers += each + "\n"
-                            response_txt += f"    {each}\n"
-                    response_txt += "```"
-                    # add to redis
-                    try:
-                        openRedis()
-                        redis_conn.set(f'DNSBOT:whois_{domain}', response_txt, ex=redis_expired)
-                    except Exception as e:
-                        traceback.print_exc(file=sys.stdout)
-
-                    msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-                    await msg.add_reaction(EMOJI_OK_BOX)
-                    # insert insert_query_name
-                    await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "WHOIS", response_txt, "DISCORD")
-                    # add to whois_db
-                    if domain_whois.last_updated:
-                        await add_domain_whois_db(domain, domain_whois.registrar, nameservers, f"{domain_whois.creation_date:%Y-%m-%d}", f"{domain_whois.expiration_date:%Y-%m-%d}", f"{domain_whois.last_updated:%Y-%m-%d}")
-                    else:
-                        await add_domain_whois_db(domain, domain_whois.registrar, nameservers, f"{domain_whois.creation_date:%Y-%m-%d}", f"{domain_whois.expiration_date:%Y-%m-%d}")
-                    return
-                else:
-                    # add to notfound
-                    await add_domain_whois_db_notfound(domain, ctx.message.content, str(ctx.message.author.id), "DISCORD")
-                    await ctx.send(f'{response_to}{ctx.author.mention} cannot find whois information for {domain}. Please check later.')
-                    return
+                return
             except Exception as e:
+                await logchanbot(traceback.format_exc())
                 traceback.print_exc(file=sys.stdout)
                 # add to notfound
                 await add_domain_whois_db_notfound(domain, ctx.message.content, str(ctx.message.author.id), "DISCORD")
                 await ctx.send(f'{response_to}{ctx.author.mention} cannot find whois information for {domain}.')
                 return
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
 
 
-async def whois_by_domain(ctx, domain):
+def whois_by_domain(ctx, domain):
     return domainwhois(domain)
 
 
@@ -1378,6 +1461,7 @@ async def insert_query_name(user_id: str, query_msg: str, query_type: str, query
                 conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1392,6 +1476,7 @@ async def if_user_block(user_id: str, user_server: str):
             result = cur.fetchone()
             if result: return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1407,6 +1492,7 @@ async def if_query_block(query_name: str, active: str = 'YES'):
             result = cur.fetchone()
             if result: return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1422,6 +1508,7 @@ async def add_domain_ipwhois_db(ip: str, ipwhois_dump: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1437,6 +1524,7 @@ async def add_screen_db(domain: str, screen_link: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1452,6 +1540,7 @@ async def add_screen_weblink_db(link: str, stored_image: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1467,6 +1556,7 @@ async def add_domain_header_db(domain: str, head_dump: str, server: str, content
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1482,6 +1572,7 @@ async def add_domain_a_db(domain: str, a_records: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1497,6 +1588,7 @@ async def add_domain_aaaa_db(domain: str, aaaa_records: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1512,6 +1604,7 @@ async def add_domain_mx_db(domain: str, mx_records: str):
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1533,6 +1626,7 @@ async def add_domain_whois_db(domain: str, registrar: str, name_servers: str, cr
                 conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1548,6 +1642,7 @@ async def add_domain_whois_db_notfound(domain_name: str, query_msg: str, user_id
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1563,6 +1658,7 @@ async def get_last_query_user(user_id: str, user_server: str, lastDuration: int)
             result = cur.fetchone()
             return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1578,6 +1674,7 @@ async def add_query_to_queue(user_id: str, query_msg: str, user_server: str = 'D
             conn.commit()
         return True
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
@@ -1593,6 +1690,7 @@ async def count_last_user_query(user_id: str, lastDuration: int, user_server: st
             result = cur.fetchone()
             return int(result['COUNT(*)']) if 'COUNT(*)' in result else 0
     except Exception as e:
+        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
