@@ -499,7 +499,7 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{response_to}{ctx.author.mention} Please use only **ascii** text.')
         return
-    link = "https://letmegooglethat.com/?q=" + message
+    link = "https://lmgtfy.app/?q=" + message
 
     # check if in redis
     try:
