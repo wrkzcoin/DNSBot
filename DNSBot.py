@@ -525,7 +525,7 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
     try:
         await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
         # if user already doing other command
-        if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 0:
+        if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
             if len(message) > 25:
@@ -756,7 +756,7 @@ async def webshot(ctx, website: str):
         try:
             await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
             # if user already doing other command
-            if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 0:
+            if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
                 COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                 await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                 async with ctx.typing():
@@ -864,7 +864,7 @@ async def whoisip(ctx, ip: str):
     try:
         await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
         # if user already doing other command
-        if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 0:
+        if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
             async with ctx.typing():
@@ -1271,7 +1271,7 @@ async def whois(ctx, domain: str):
             try:
                 await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
                 # if user already doing other command
-                if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 0:
+                if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
                     COMMAND_IN_PROGRESS.append(ctx.message.author.id)
                     await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
                     async with ctx.typing():
