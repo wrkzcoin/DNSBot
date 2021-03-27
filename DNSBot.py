@@ -499,7 +499,7 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
         await ctx.message.add_reaction(EMOJI_ERROR)
         await ctx.send(f'{response_to}{ctx.author.mention} Please use only **ascii** text.')
         return
-    link = "https://lmgtfy.com/?q=" + message
+    link = "https://letmegooglethat.com/?q=" + message
 
     # check if in redis
     try:
@@ -568,7 +568,7 @@ async def lmgtfy(ctx, member: discord.Member, *, message):
         traceback.print_exc(file=sys.stdout)
 
 
-async def lmgtfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
+def lmgtfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
     try:
         random_js = config.screenshot.temp_dir + str(uuid.uuid4())+".js"
         video_create = config.screenshot.temp_dir + "/lmgtfy-" + str(uuid.uuid4())+".mp4"
@@ -587,10 +587,8 @@ async def lmgtfy_link(ctx, url, duration: int=6, w: int=1280, h: int=960):
                 os.unlink(random_js)
                 return video_create
         except OSError as e:
-            await logchanbot(traceback.format_exc())
             traceback.print_exc(file=sys.stdout)
     except Exception as e:
-        await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
     return False
 
