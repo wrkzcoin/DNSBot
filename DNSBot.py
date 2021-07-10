@@ -5,6 +5,8 @@ from discord.utils import get
 from discord_webhook import DiscordWebhook
 import functools
 
+## virtualenv -p /usr/bin/python3.8 ./
+
 import os
 import time, timeago
 from datetime import datetime
@@ -41,6 +43,7 @@ from typing import List, Dict
 
 # server load
 import psutil
+import pydnsbl
 
 # screenshot
 from webscreenshot.webscreenshot import *
@@ -85,10 +88,8 @@ bot_help_mx = "Get mx record from a domain name."
 bot_help_a = "Get A (IPv4) record from a domain name."
 bot_help_aaaa = "Get AAAA (IPv6) record from a domain name."
 bot_help_whoisip = "Whois IP."
-bot_help_webshot = "Get screenshot of a domain."
 bot_help_donate = "Donate to support DNSBot."
 bot_help_usage = "Show current stats"
-bot_help_header = "Get website header."
 bot_help_duckgo = "Print search result from duckduckgo."
 bot_help_lmgtfy = "Show Let Me Google For You for someone."
 
@@ -130,12 +131,10 @@ def openConnection():
 
 
 async def logchanbot(content: str):
-    filterword = config.discord.logfilterword.split(",")
-    for each in filterword:
-        content = content.replace(each, config.discord.filteredwith)
     try:
-        webhook = DiscordWebhook(url=config.discord.botdbghook, content=f'```{discord.utils.escape_markdown(content)}```')
-        webhook.execute()
+        #webhook = DiscordWebhook(url=config.discord.botdbghook, content=f'```{discord.utils.escape_markdown(content)}```')
+        #webhook.execute()
+        pass
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
 
@@ -355,117 +354,6 @@ async def dnsbot(ctx):
     return
 
 
-@commands.is_owner()
-@bot.command(pass_context=True, name='header', help=bot_help_header, hidden = True)
-async def header(ctx, website: str):
-    global COMMAND_IN_PROGRESS, redis_expired
-    # refer to limit
-    user_check = await check_limit(ctx, website)
-    if user_check:
-        return
-
-    # check if under maintenance
-    if is_maintenance():
-        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
-        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
-        return
-
-    response_to = "> " + ctx.message.content[:256] + "\n"
-    domain = ''
-    try:
-        if not website.startswith('http://') and not website.startswith('https://'):
-            website = 'http://' + website
-        domain = urlparse(website).netloc
-    except Exception as e:
-        await logchanbot(traceback.format_exc())
-        traceback.print_exc(file=sys.stdout)
-        await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
-        return
-
-    # check if in redis
-    try:
-        openRedis()
-        if redis_conn and redis_conn.exists(f'DNSBOT:header_{website}'):
-            response_txt = redis_conn.get(f'DNSBOT:header_{website}').decode()
-            await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-            await msg.add_reaction(EMOJI_OK_BOX)
-            return
-    except Exception as e:
-        await logchanbot(traceback.format_exc())
-        traceback.print_exc(file=sys.stdout)
-
-    # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user and config.query.no_waiting_queue == 0:
-        await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
-        return
-
-    if not is_valid_hostname(domain):
-        await ctx.send(f'{ctx.author.mention} invalid given website {website} -> {domain}.')
-        return
-    else:
-        domain = domain.lower()
-        if not domain.startswith('http://') and not domain.startswith('https://'):
-            domain = 'http://' + domain
-        try:
-            await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
-            # if user already doing other command
-            if ctx.message.author.id not in COMMAND_IN_PROGRESS:
-                COMMAND_IN_PROGRESS.append(ctx.message.author.id)
-                await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-            
-            header = await get_header(domain)
-            # await asyncio.sleep(100)
-            if ctx.message.author.id in COMMAND_IN_PROGRESS:
-                COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-            if header:
-                response_txt = "Web header for domain: **{}**\n".format(domain)
-                response_txt += "```"
-                if 'Server' in header:
-                    response_txt += "    Server:       {}\n".format(header['Server'])
-                if 'Content-Type' in header:
-                    response_txt += "    Content-Type: {}\n".format(header['Content-Type'])
-                if 'Connection' in header:
-                    response_txt += "    Connection:   {}\n".format(header['Connection'])
-                if 'Date' in header:
-                    response_txt += "    Date:         {}\n".format(header['Date'])
-                response_txt += "```"
-                if 'Content-Type' not in header and 'Server' not in header:
-                    msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get header for {domain}")
-                    return
-                # add to redis
-                try:
-                    openRedis()
-                    redis_conn.set(f'DNSBOT:header_{domain}', response_txt, ex=redis_expired)
-                except Exception as e:
-                    await logchanbot(traceback.format_exc())
-                    traceback.print_exc(file=sys.stdout)
-
-                msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-                # add_domain_header_db
-                header_items = []
-                for each, value in header.items():
-                    header_items.append("{}: {}".format(each, value))
-                await add_domain_header_db(domain, json.dumps(header_items), header['Server'] if 'Server' in header else "N/A", header['Content-Type'] if 'Content-Type' in header else "N/A")
-                await msg.add_reaction(EMOJI_OK_BOX)
-                # insert insert_query_name
-                await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "HEADER", response_txt, "DISCORD")
-            else:
-                msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get header for {domain}")
-                return
-        except Exception as e:
-            await logchanbot(traceback.format_exc())
-            traceback.print_exc(file=sys.stdout)
-
-async def get_header(url):
-    async with aiohttp.ClientSession() as s:
-        async with s.head(url, allow_redirects=True) as r:
-            if r.headers: return r.headers
-    return False
-
-
-
 @bot.command(pass_context=True, name='lmgtfy', aliases=['lmg'], help=bot_help_lmgtfy)
 async def lmgtfy(ctx, member: discord.Member, *, message):
     global COMMAND_IN_PROGRESS, redis_expired
@@ -662,6 +550,7 @@ async def duckgo(ctx, term: str, *, message):
             COMMAND_IN_PROGRESS.append(ctx.message.author.id)
             await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
         async with ctx.typing():
+            print("webshoot: " + link)
             image_shot_func = functools.partial(webshot_link, ctx, link, config.screenshot.default_screensize)
             image_shot = await bot.loop.run_in_executor(None, image_shot_func)
             if image_shot:
@@ -701,130 +590,6 @@ async def duckgo(ctx, term: str, *, message):
     except Exception as e:
         await logchanbot(traceback.format_exc())
         traceback.print_exc(file=sys.stdout)
-
-
-@bot.command(pass_context=True, name='webshot', aliases=['ws'], help=bot_help_webshot)
-async def webshot(ctx, website: str):
-    global COMMAND_IN_PROGRESS, redis_expired
-    # refer to limit
-    user_check = await check_limit(ctx, website)
-    if user_check:
-        return
-
-    # check if under maintenance
-    if is_maintenance():
-        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
-        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
-        return
-
-    response_to = "> " + ctx.message.content[:256] + "\n"
-    domain = ''
-    try:
-        if not website.startswith('http://') and not website.startswith('https://'):
-            website = 'http://' + website
-        domain = urlparse(website).netloc
-    except Exception as e:
-        await logchanbot(traceback.format_exc())
-        traceback.print_exc(file=sys.stdout)
-        await ctx.send(f'{ctx.author.mention} invalid website / domain given.')
-        return
-
-    # check if in redis
-    try:
-        openRedis()
-        if redis_conn and redis_conn.exists(f'DNSBOT:webshot_{domain}'):
-            response_txt = redis_conn.get(f'DNSBOT:webshot_{domain}').decode()
-            await ctx.message.add_reaction(EMOJI_FLOPPY)
-            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-            await msg.add_reaction(EMOJI_OK_BOX)
-            return
-    except Exception as e:
-        await logchanbot(traceback.format_exc())
-        traceback.print_exc(file=sys.stdout)
-
-    # if user already doing other command
-    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user and config.query.no_waiting_queue == 0:
-        await ctx.message.add_reaction(EMOJI_ERROR)
-        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
-        return
-
-    if not is_valid_hostname(domain):
-        await ctx.send(f'{ctx.author.mention} invalid given website {website} -> {domain}.')
-        return
-    else:
-        domain = domain.lower()
-        try:
-            await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
-            # if user already doing other command
-            if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
-                COMMAND_IN_PROGRESS.append(ctx.message.author.id)
-                await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
-                async with ctx.typing():
-                    image_shot_func = functools.partial(webshot_link, ctx, domain, config.screenshot.default_screensize)
-                    image_shot = await bot.loop.run_in_executor(None, image_shot_func)
-                    if image_shot:
-                        # return path as image_shot
-                        # create a directory if not exist 
-                        subDir = str(time.strftime("%Y-%m"))
-                        dirName = config.screenshot.path_storage + subDir
-                        filename = str(time.strftime('%Y-%m-%d')) + "_" + str(int(time.time())) + "_" + domain + ".png"
-                        if not os.path.exists(dirName):
-                            os.mkdir(dirName)
-                        # move file
-                        shutil.move(image_shot, dirName + "/" + filename)
-                        response_txt = "Web screenshot for domain: **{}**\n".format(domain)
-                        image_link = config.screenshot.given_site + subDir + "/" + filename
-                        response_txt += image_link
-                        # add to redis
-                        try:
-                            openRedis()
-                            redis_conn.set(f'DNSBOT:webshot_{domain}', response_txt, ex=redis_expired)
-                        except Exception as e:
-                            await logchanbot(traceback.format_exc())
-                            traceback.print_exc(file=sys.stdout)
-                        
-                        # Try send message
-                        try:
-                            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
-                        except Exception as e:
-                            await logchanbot(traceback.format_exc())
-                            traceback.print_exc(file=sys.stdout)
-                        # add_screen_db
-                        await add_screen_db(domain, image_link)
-                        await msg.add_reaction(EMOJI_OK_BOX)
-                        # insert insert_query_name
-                        await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "SCREEN", response_txt, "DISCORD", image_link)
-                    else:
-                        try:
-                            msg = await ctx.send(f"{response_to}{ctx.author.mention} I cannot get webshot for {domain}")
-                        except Exception as e:
-                            await logchanbot(traceback.format_exc())
-                            traceback.print_exc(file=sys.stdout)
-                    # remove from process
-                    if ctx.message.author.id in COMMAND_IN_PROGRESS:
-                        COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
-                    return
-            else:
-                await ctx.message.add_reaction(EMOJI_ERROR)
-                await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
-                return
-        except Exception as e:
-            await logchanbot(traceback.format_exc())
-            traceback.print_exc(file=sys.stdout)
-
-
-def webshot_link(ctx, website, window_size: str = '1920,1080'):
-    try:
-        random_dir = '/tmp/'+str(uuid.uuid4())+"/"
-        take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website], encoding='utf-8')
-        take_image.wait(timeout=12000)
-        for file in os.listdir(random_dir):
-            if os.path.isfile(os.path.join(random_dir, file)):
-                return random_dir + file
-        return False
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-    return False
 
 
 @bot.command(pass_context=True, name='whoisip', help=bot_help_whoisip)
@@ -881,6 +646,7 @@ async def whoisip(ctx, ip: str):
                 if not results:
                     try:
                         await ctx.send(f'{response_to}{ctx.author.mention} Failed to find IP information for {ip}. Please check later.')
+                        return
                     except Exception as e:
                         pass
                 ipwhois_dump = json.dumps(results)
@@ -922,6 +688,7 @@ async def whoisip(ctx, ip: str):
             await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
             return
     except ValueError:
+        traceback.print_exc(file=sys.stdout)
         await logchanbot(traceback.format_exc())
         await ctx.send(f'{response_to}{ctx.author.mention} invalid given ip {ip}.')
         return
@@ -933,6 +700,118 @@ def whois_by_ip(ctx, ip):
         return obj
     except ipwhois.exceptions.IPDefinedError:
         return False
+
+
+
+@bot.command(pass_context=True, name='dnsbl', aliases=['bl', 'blacklist'], help='Check ipv4 if in blacklist')
+async def dnsbl(ctx, ip: str):
+    global COMMAND_IN_PROGRESS, redis_expired
+    # refer to limit
+    user_check = await check_limit(ctx, ip)
+    if user_check:
+        return
+
+    # check if under maintenance
+    if is_maintenance():
+        await ctx.message.add_reaction(EMOJI_MAINTENANCE)
+        await ctx.send(f'{ctx.author.mention} I am under maintenance. Check back later.')
+        return
+
+    response_to = "> " + ctx.message.content[:256] + "\n"
+    # check if in redis
+    try:
+        openRedis()
+        if redis_conn and redis_conn.exists(f'DNSBOT:dnsbl_{ip}'):
+            response_txt = redis_conn.get(f'DNSBOT:dnsbl_{ip}').decode()
+            await ctx.message.add_reaction(EMOJI_FLOPPY)
+            msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+            await msg.add_reaction(EMOJI_OK_BOX)
+            return
+    except Exception as e:
+        await logchanbot(traceback.format_exc())
+        traceback.print_exc(file=sys.stdout)
+
+    # if user already doing other command
+    if ctx.message.author.id in COMMAND_IN_PROGRESS and ctx.message.author.id != config.discord.ownerID and config.query.limit_1_queue_per_user and config.query.no_waiting_queue == 0:
+        await ctx.message.add_reaction(EMOJI_ERROR)
+        await ctx.send(f'{ctx.author.mention} You have one request on progress. Please check later.')
+        return
+    def check_dns(ipv4: str):
+        try:
+            ip_checker = pydnsbl.DNSBLIpChecker()
+            return ip_checker.check(ipv4)
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            return None
+    try:
+        await ctx.message.add_reaction(EMOJI_HOURGLASS_NOT_DONE)
+        # if user already doing other command
+        if ctx.message.author.id not in COMMAND_IN_PROGRESS or config.query.no_waiting_queue == 1:
+            COMMAND_IN_PROGRESS.append(ctx.message.author.id)
+            await add_query_to_queue(str(ctx.message.author.id), ctx.message.content[:500], 'DISCORD')
+            async with ctx.typing():
+                results = None
+                obj_func = functools.partial(check_dns, ip)
+                obj = await bot.loop.run_in_executor(None, obj_func)
+                # remove from process
+                if ctx.message.author.id in COMMAND_IN_PROGRESS:
+                    COMMAND_IN_PROGRESS.remove(ctx.message.author.id)
+                if not obj:
+                    print(f"DNSBL requested for {ip} not found any result ...")
+                else:
+                    detect = []
+                    if len(obj.detected_by) > 0:
+                        for key, value in obj.detected_by.items():
+                            detect.append(key)
+                    results = {'ip': ip, 'blacklisted': obj.blacklisted, 'nos_providers': len(obj.providers), 'nos_detected_by': len(obj.detected_by), 'detected_by': detect}
+                if not results:
+                    try:
+                        await ctx.send(f'{response_to}{ctx.author.mention} Failed to find DNSBL for IP {ip}. Please check later.')
+                        return
+                    except Exception as e:
+                        pass
+                dnsbl_dump = json.dumps(results)
+                if results:
+                    response_txt = "DNSBL for IP: **{}**\n".format(ip)
+                    response_txt += "```"
+                    response_txt += "    IP:           {}\n".format(results['ip'])
+                    response_txt += "    BLACKLISTED:  {}\n".format(results['blacklisted'])
+                    response_txt += "    CHECKED:      {}\n".format(results['nos_providers'])
+                    response_txt += "    FOUND BY:     {}\n".format(results['nos_detected_by'])
+                    if len(results['detected_by']) > 0:
+                        response_txt += "    LISTED IN:    {}\n".format(', '.join(results['detected_by']))
+                    response_txt += "```"
+                    # add to redis
+                    try:
+                        openRedis()
+                        redis_conn.set(f'DNSBOT:dnsbl_{ip}', response_txt, ex=redis_expired)
+                    except Exception as e:
+                        await logchanbot(traceback.format_exc())
+                        traceback.print_exc(file=sys.stdout)
+                    try:
+                        msg = await ctx.send(f'{response_to}{ctx.author.mention} {response_txt}')
+                        await msg.add_reaction(EMOJI_OK_BOX)
+                    except Exception as e:
+                        pass
+                    # insert insert_query_name
+                    await insert_query_name(str(ctx.message.author.id), ctx.message.content[:256], "DNSBL", response_txt, "DISCORD")
+                    # add to mx_db
+                    ## await add_domain_ipwhois_db(ip, dnsbl_dump)
+                else:
+                    try:
+                        await ctx.send(f'{response_to}{ctx.author.mention} cannot find IP information for {ip}. Please check later.')
+                    except Exception as e:
+                        pass
+                return
+        else:
+            await ctx.message.add_reaction(EMOJI_ERROR)
+            await ctx.send(f'{response_to}{ctx.author.mention} You have one request on progress. Please check later.')
+            return
+    except ValueError:
+        traceback.print_exc(file=sys.stdout)
+        await logchanbot(traceback.format_exc())
+        await ctx.send(f'{response_to}{ctx.author.mention} invalid given ip {ip}.')
+        return
 
 
 @bot.command(pass_context=True, name='a', aliases=['ipv4'], help=bot_help_a)
@@ -1335,6 +1214,21 @@ def whois_by_domain(ctx, domain):
     return domainwhois(domain)
 
 
+def webshot_link(ctx, website, window_size: str = '1920,1080'):
+    try:
+        random_dir = config.screenshot.temp_dir + 'tmp/' + str(uuid.uuid4())+"/"
+        os.mkdir(random_dir)
+        take_image = subprocess.Popen([config.screenshot.binary_webscreenshot, "--no-xserver", "--renderer-binary", config.screenshot.binary_phantomjs, f"--window-size={window_size}", "-q 85", f"--output-directory={random_dir}", website], encoding='utf-8')
+        take_image.wait(timeout=12000)
+        for file in os.listdir(random_dir):
+            if os.path.isfile(os.path.join(random_dir, file)):
+                return random_dir + file
+        return False
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+    return False
+
+
 async def check_limit(ctx, domain):
     # Owner no limits
     if await is_owner(ctx):
@@ -1403,32 +1297,11 @@ async def mx_error(ctx, error):
     return
 
 
-@header.error
-async def header_error(ctx, error):
-    if isinstance(error, commands.MissingRequiredArgument):
-        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
-                             '```Example: .header domain.name```')
-        await msg.add_reaction(EMOJI_OK_BOX)
-    elif isinstance(error, commands.NotOwner) or isinstance(error, commands.MissingPermissions):
-        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} This command requires Owner or Permission.')
-        await msg.add_reaction(EMOJI_OK_BOX)
-    return
-
-
 @aaaa.error
 async def aaaa_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
         msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing a domain name argument. '
                              '```Example: .aaaa domain.name or .ipv6 domain.name```')
-        await msg.add_reaction(EMOJI_OK_BOX)
-    return
-
-
-@webshot.error
-async def webshot_error(ctx, error):
-    if isinstance(error, commands.MissingRequiredArgument):
-        msg = await ctx.send(f'{EMOJI_ERROR} {ctx.author.mention} Missing or incorrect a domain name. '
-                             '```Example: .webshot url or .ws url```')
         await msg.add_reaction(EMOJI_OK_BOX)
     return
 
@@ -1546,22 +1419,6 @@ async def add_screen_weblink_db(link: str, stored_image: str):
             sql = """ INSERT INTO screen_weblink_db (`link`, `taken_date`, `stored_image`) 
                       VALUES (%s, %s, %s) """
             cur.execute(sql, (link, int(time.time()), stored_image))
-            conn.commit()
-        return True
-    except Exception as e:
-        await logchanbot(traceback.format_exc())
-        traceback.print_exc(file=sys.stdout)
-    return False
-
-
-async def add_domain_header_db(domain: str, head_dump: str, server: str, content_type: str):
-    global conn
-    try:
-        openConnection()
-        with conn.cursor() as cur:
-            sql = """ INSERT INTO header_db (`domain_name`, `head_date`, `head_dump`, `server`, `content_type`) 
-                      VALUES (%s, %s, %s, %s, %s) """
-            cur.execute(sql, (domain.lower(), int(time.time()), head_dump, server, content_type))
             conn.commit()
         return True
     except Exception as e:
